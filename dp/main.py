@@ -209,14 +209,14 @@ def parse_args():
     return args, api
 
 
-def log_samples(samples, additional_info, folder, plot_images, modality):
+def log_samples(samples, additional_info, folder, plot_samples, modality):
     if not os.path.exists(folder):
         os.makedirs(folder)
     np.savez(
         os.path.join(folder, 'samples.npz'),
         samples=samples,
         additional_info=additional_info)
-    if plot_images:
+    if plot_samples:
         for i in range(samples.shape[0]):
             if modality == 'image':
                 imageio.imwrite(os.path.join(folder, f'{i}.png'), samples[i])
@@ -348,7 +348,7 @@ def main():
             samples=samples,
             additional_info=additional_info,
             folder=f'{args.result_folder}/{0}',
-            plot_images=args.plot_images,
+            plot_samples=args.plot_images,
             modality=args.modality)
         if args.data_checkpoint_step >= 0:
             logging.info('Ignoring data_checkpoint_step')
@@ -485,7 +485,7 @@ def main():
             samples=samples,
             additional_info=additional_info,
             folder=f'{args.result_folder}/{t}',
-            plot_images=args.plot_images,
+            plot_samples=args.plot_images,
             modality=args.modality)
 
 
