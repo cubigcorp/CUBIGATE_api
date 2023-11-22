@@ -1,0 +1,9 @@
+*.zip
+checkpoints
+lora
+result
+logs
+*.gz
+*.png
+*.jpg
+*pyc
