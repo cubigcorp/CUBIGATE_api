@@ -13,7 +13,7 @@
   5. `visualize()`에서 다중 샘플 시각화 방법 정의
    
 * `dpsda/dataset.py`
-  1. **EXTENSIONS(7~ lines)** 정의
+  1. 모달리티에 따른 확장자 변수 **EXTENSIONS(7~ lines)** 정의
   2. 모달리티에 따른 **Dataset 클래스** 정의
   
 * `dpsda/data_loader.py`
