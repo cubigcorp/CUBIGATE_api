@@ -1,10 +1,10 @@
 import torch
 import numpy as np
 from tqdm import tqdm
-from .llama.generation import Llama
 from .api import API
 from transformers import AutoTokenizer
 import transformers
+import gc
 # from dpsda.pytorch_utils import dev
 
 
@@ -90,7 +90,7 @@ class Llama2API(API):
 
         for prompt_i, prompt in enumerate(prompts):
             num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
-            print(num_samples_for_prompt)
+
             num_iterations = int(np.ceil(
                 float(num_samples_for_prompt) / max_batch_size))
             for iteration in tqdm(range(num_iterations)):
@@ -101,8 +101,10 @@ class Llama2API(API):
                 text = [r[0]['generated_text'] for r in response]
                 indices = [t.find(self.flag) for t in text]
                 text = [t[idx+len(self.flag):].strip('\n') for t, idx in zip(text, indices)]
+
                 texts.append(text)
-                
+                torch.cuda.empty_cache()
+                gc.collect()
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 

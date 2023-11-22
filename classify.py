@@ -14,38 +14,45 @@ def argument() -> argparse.Namespace:
     parser.add_argument(
         '--data_dir',
         required=False,
-        type=str
+        type=str,
+        help="Path of the base data directory, may contain sub directories for train/test/valid datasets."
     )
     parser.add_argument(
         '--train_data_dir',
         required=False,
-        type=str
+        type=str,
+        help="Path of train data directory, not needed if it is inside the base data directory"
     )
     parser.add_argument(
         '--valid_data_dir',
         required=False,
-        type=str
+        type=str,
+        help="Path of validation data directory, not needed if it is inside the base data directory"
     )
     parser.add_argument(
         '--test_data_dir',
         required=False,
-        type=str
+        type=str,
+        help="Path of test data directory, not needed if it is inside the base data directory"
     )
     parser.add_argument(
-        '--suffix',
+        '--prefix',
         required=True,
-        type=str
+        type=str,
+        help="Prefix for output files."
     )
     parser.add_argument(
         '--log_dir',
         required=False,
         default='logs',
-        type=str
+        type=str,
+        help="Path of the base log directory. The final path will be log_dir/prefix"
     )
     parser.add_argument(
         '--device',
         required=True,
-        type=int
+        type=int,
+        help="Index of the GPU device to put everything on."
     )
     parser.add_argument(
         '--epochs',
@@ -70,54 +77,65 @@ def argument() -> argparse.Namespace:
         required=False,
         default='resnet50',
         choices=['vgg16', 'resnet50'],
-        type=str
+        type=str,
+        help="Name of the pretrained model to fine tune."
     )
     parser.add_argument(
         '--train',
         required=False,
-        action='store_true'
+        action='store_true',
+        help="Whether to train the model."
     )
     parser.add_argument(
         '--test',
         required=False,
-        action='store_true'
+        action='store_true',
+        help="Whether to test the model."
     )
     parser.add_argument(
         '--valid',
         required=False,
-        action='store_true'
+        action='store_true',
+        help="Whether to validate the model."
     )
     parser.add_argument(
         '--checkpoint',
         required=False,
-        type=str
+        type=str,
+        help="Path of the checkpoint to use, needed when testing or validating the model without training it."
     )
     parser.add_argument(
         '--num_classes',
         required=True,
-        type=int
+        type=int,
+        help="Number of classes."
     )
     parser.add_argument(
         '--task',
         required=False,
-        type=str
+        choices=['binary', 'multiclass'],
+        type=str,
+        help="Type of classification"
     )
     parser.add_argument(
         '--limit',
         required=False,
-        type=int
+        type=int,
+        help="Number of samples to use, needed when using only some portion of the whole dataset."
     )
     parser.add_argument(
         '--dataset',
         required=False,
-        type=str
+        choices=['cifar10'],
+        type=str,
+        help="Name of dataset to use, needed when using public datasets such as cifar10"
     )
     args = parser.parse_args()
 
     if args.data_dir is None and args.dataset is None:
         raise Exception("Either data directory or dataset must be provided")
 
-    log_dir = os.path.join(args.log_dir, args.suffix)
+    log_dir = os.path.join(args.log_dir, args.prefix)
     os.makedirs(log_dir, exist_ok=True)
     args.log_dir = log_dir
     if args.data_dir is not None:
@@ -171,7 +189,7 @@ def validate(dataloader: DataLoader, model: torch.nn.Module, criterion: Callable
         progress_bar.set_postfix(loss=avg_loss, acc=avg_acc)
     logging.info(f"Test loss: {avg_loss}, Accuracy: {avg_acc}")    
 
-def train(train_data_dir: str, size: Tuple, epochs: int, batch_size: int, lr: float, model: torch.nn.Module, suffix: str, device: str, task: str, num_classes: int, limit: int, valid: bool, valid_data_dir: str=None, dataset: str=None):
+def train(train_data_dir: str, size: Tuple, epochs: int, batch_size: int, lr: float, model: torch.nn.Module, prefix: str, device: str, task: str, num_classes: int, limit: int, valid: bool, valid_data_dir: str=None, dataset: str=None):
     model.to(device)
     if dataset is not None:
         train_dataset = get_dataset(dataset, size, True)
@@ -227,7 +245,7 @@ def train(train_data_dir: str, size: Tuple, epochs: int, batch_size: int, lr: fl
             validate(valid_loader, model, criterion, device, task, num_classes)
             
 
-    torch.save(model.state_dict(), f'checkpoints/{suffix}_model.pt')
+    torch.save(model.state_dict(), f'checkpoints/{prefix}_model.pt')
 
 def test(data_dir: str, size: Tuple, batch_size: int, model: torch.nn.Module, device: str, task: str, num_classes: int, limit: int, dataset: str=None):
     model.to(device)
@@ -306,8 +324,8 @@ if __name__ == '__main__':
     device = f"cuda:{args.device}"
     if args.train:
         model = get_model(args.pretrained_model, args.num_classes, True)
-        train(args.train_data_dir, SIZE[args.pretrained_model], args.epochs, args.batch, args.lr, model, args.suffix, device, args.task, args.num_classes, args.limit, args.valid, args.valid_data_dir, args.dataset)
-        args.checkpoint = f'checkpoints/{args.suffix}_model.pt'
+        train(args.train_data_dir, SIZE[args.pretrained_model], args.epochs, args.batch, args.lr, model, args.prefix, device, args.task, args.num_classes, args.limit, args.valid, args.valid_data_dir, args.dataset)
+        args.checkpoint = f'checkpoints/{args.prefix}_model.pt'
     if args.test:
         checkpoint = torch.load(args.checkpoint)
         model = get_model(args.pretrained_model, args.num_classes, False, checkpoint)

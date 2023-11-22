@@ -8,3 +8,5 @@ logs
 *.jpg
 *.pyc
 *.pt
+dp/docker
+dp/models

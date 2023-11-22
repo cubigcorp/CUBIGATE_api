@@ -13,39 +13,43 @@ def argument():
         '--data_dir',
         type=str,
         required=True,
-        help="Image data directory"
+        help="Path of the base data directory."
     )
     parser.add_argument(
-        '--task',
+        '--dataset',
         type=str,
         choices=['age'],
-        required=True
+        required=True,
+        help='Name of the dataset to classify.'
     )
     parser.add_argument(
         '--device',
         type=int,
-        required=True
+        required=True,
+        help="Index of the GPU device to put everything on."
     )
     parser.add_argument(
         '--num_classes',
         type=int,
-        required=True
+        required=True,
+        help="Number of classes."
     )
     parser.add_argument(
         '--result_dir',
         type=str,
         required=False,
-        default='result'
+        default='Path of the directory where the result will be saved.'
     )
     parser.add_argument(
-        '--suffix',
-        type=str,
-        required=False
+        '--dp',
+        required=False,
+        action='store_true',
+        help="Whether the dataset is dp or non-dp"
     )
     args = parser.parse_args()
     return args
 
-def make_images(dir: str, task: str) -> List:
+def make_images(dir: str, dataset: str) -> List:
     data = []
     for (root, dirs, files) in os.walk(dir):
         for file in files:
@@ -55,7 +59,7 @@ def make_images(dir: str, task: str) -> List:
             data.append(full)     
     return data
 
-def get_texts(task: str) -> List:
+def get_texts(dataset: str) -> List:
     TEXTS = {
         'age':{ 'base': 'a photo of a person',
                 'labels': 
@@ -67,8 +71,8 @@ def get_texts(task: str) -> List:
     }
 
     texts = []
-    for label in TEXTS[task]['labels']:
-        text = f'{TEXTS[task]["base"]} {label}'
+    for label in TEXTS[dataset]['labels']:
+        text = f'{TEXTS[dataset]["base"]} {label}'
         texts.append(text)
     return texts
 
@@ -98,7 +102,7 @@ def predict(images: List, texts: List, device_num: int) -> Dict:
         }
     return predictions
 
-def get_label(pred: Dict, task: str):
+def get_label(pred: Dict, dataset: str):
     LABELS = {
         'age':
             ['18-20',
@@ -107,7 +111,7 @@ def get_label(pred: Dict, task: str):
              '41-50',
              '51-60']
     }
-    labels = LABELS[task]
+    labels = LABELS[dataset]
     pred_labels = []
     true_labels = []
 
@@ -143,26 +147,24 @@ def get_confidence(pred: Dict, num_classes: int) -> List:
 
 if __name__ == '__main__':
     args = argument()
+    suffix = 'dp' if args.dp else 'non_dp'
     if not os.path.exists(args.result_dir):
         os.makedirs(args.result_dir)
-    file_name = f'{args.result_dir}/zero-shot_age_{args.suffix}.json'
-    images = make_images(args.data_dir, args.task)
-    texts = get_texts(args.task)
+    file_name = f'{args.result_dir}/zero-shot_{args.dataset}_{suffix}.json'
+    images = make_images(args.data_dir, args.dataset)
+    texts = get_texts(args.dataset)
     if not os.path.exists(file_name):
         predictions = predict(images, texts, args.device)
     else:
         with open(file_name, 'r') as f:
             predictions = json.load(f)
 
-    pred, target = get_label(predictions, args.task)
+    pred, target = get_label(predictions, args.dataset)
     confidence, pred_dist = get_confidence(predictions, args.num_classes)
     predictions['accuracy'] = accuracy(pred, target)
     predictions['confidence'] = confidence
     predictions['predicted_distribution'] = pred_dist
 
-    
-
-    # pred_to_save = json.dumps(predictions)
     with open(file_name, 'w') as f:
         json.dump(predictions, f)
     
