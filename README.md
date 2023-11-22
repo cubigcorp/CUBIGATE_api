@@ -18,7 +18,8 @@
 * `classify.py`: Fine-tune a pretrained classifier
   
   ```
-  classify.py --data_dir [DATA_DIR] --prefix [PREFIX] --device [DEVICE_NUM] --num_classes [NUM_CLASSES] --train --valid --test
+  classify.py --data_dir [DATA_DIR] --prefix [PREFIX] \
+  --device [DEVICE_NUM] --num_classes [NUM_CLASSES] --train --valid --test
   ```
   * DATA_DIR: Path of the base data directory, may contain sub directories for train/test/valid datasets.
   * PREFIX: Prefix for output files.
@@ -31,7 +32,8 @@
 * `clip_classify.py`: CLIP zero-shot classification
   
   ```
-  clip_classify.py --data_dir [DATA_DIR] --dataset [DATASET_NAME] --device [DEVICE_NUM] --num_classes [NUM_CLASSES] --result_dir [RESULT_DIR] --dp
+  clip_classify.py --data_dir [DATA_DIR] --dataset [DATASET_NAME] \
+  --device [DEVICE_NUM] --num_classes [NUM_CLASSES] --result_dir [RESULT_DIR] --dp
   ```
   * DATA_DIR: Path of the data directory.
   * DATASET_NAME: Name of the dataset to classify.
