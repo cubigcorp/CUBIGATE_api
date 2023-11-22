@@ -1,0 +1,23 @@
+python main.py \
+--device 2 \
+--modality text \
+--feature_extractor clip_vit_b_32 \
+--count_threshold 2.0 \
+--noise_multiplier 1.0 \
+--lookahead_degree 8 \
+--data_folder /home/minsy/CUBIG/dp/data/clinical/train \
+--num_samples_schedule 1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200 \
+--variation_degree_schedule 0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,3 \
+--num_private_samples 1200 \
+--initial_prompt "Generate a dialog between a doctor and a patient" \
+--make_fid_stats False \
+--result_folder /home/minsy/CUBIG/dp/result/clinical \
+--tmp_folder /tmp/clinical \
+--api llama2 \
+--random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--random_sampling_batch_size 10 \
+--variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--variation_batch_size 10 \
+--max_seq_len 512 \
+--top_k 10 \
+--api_device 2

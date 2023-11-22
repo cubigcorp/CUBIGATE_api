@@ -6,4 +6,5 @@ logs
 *.gz
 *.png
 *.jpg
-*pyc
+*.pyc
+*.pt
