@@ -7,7 +7,7 @@
 
 * `main.py`
   1. `parse_args()`의 **api(29-34 lines)** 에서 choice에 사용할 API 이름 추가 *!!*
-  2. `parse_args()`의 **modality(24-28 lines)** 에서 choice에 모달리티 추가
+  2. `parse_args()`의 **modality(24-28 lines)** 에서 choice에 사용할 모달리티 추가
   3. `log_samples()`의 **(221~ lines)** 에서 모달리티에 따른 샘플 저장 방법 정의
   4. **Computing histogram 다음 부분** 에서 `visualize()`의 사용 여부 결정
   5. `visualize()`에서 다중 샘플 시각화 방법 정의
@@ -30,4 +30,4 @@
      3. `variation()` 동작 방법 정의 - variation degree가 정의되지 않는 API의 경우 DPSDA 논문에 따라 variation degree를 정수로 설정하고 그 크기만큼 반복 호출하도록 정의하였음. 추후 논의 필요.
 
 * `apis/__init__.py`
-  1. `get_api_class_from_name`에서 사용할 API 클래스 개체를 반환해주는 조건문 추가 *!!*
+  1. `get_api_class_from_name`에서 사용할 API 클래스 개체를 반환해주는 조건문 추가 *!!* - `main.py`의 i번 항목에서 추가한 API 이름과 동일해야 함
