@@ -113,36 +113,6 @@ class ChatGPTAPI(API):
 
     def variation(self, samples, additional_info,
                         num_variations_per_sample, size, variation_degree):
-        """
-        Generates a specified number of variations for each image in the input
-        array using OpenAI's Image Variation API.
-
-        Args:
-            images (numpy.ndarray):
-                A numpy array of shape [num_samples x width x height
-                x channels] containing the input images as numpy arrays of type
-                uint8.
-                07
-            additional_info (numpy.ndarray):
-                A numpy array with the first dimension equaling to
-                num_samples containing prompts provided by
-                image_random_sampling.
-            num_variations_per_image (int):
-                The number of variations to generate for each input image.
-            size (str):
-                The size of the generated image variations in the
-                format "widthxheight". Options include "256x256", "512x512",
-                and "1024x1024".
-            variation_degree (float):
-                The image variation degree, between 0~1. A larger value means
-                more variation.
-
-        Returns:
-            numpy.ndarray:
-                A numpy array of shape [num_samples x num_variations_per_image
-                x width x height x channels] containing the generated image
-                variations as numpy arrays of type uint8.
-        """
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
@@ -179,11 +149,10 @@ class ChatGPTAPI(API):
         return variations
     
     @timeout(100)
-    def _generate(self, model: str, messages: Dict, max_tokens: int=2048, n: int=1, stop: str=None, temperature: float=1):
+    def _generate(self, model: str, messages: Dict, n: int=1, stop: str=None, temperature: float=1):
         response = openai.ChatCompletion.create(
                   model=model, 
                   messages=messages,
-                  max_tokens=max_tokens,
                   request_timeout = 100,
                   n=n,
                   stop=stop,

@@ -15,7 +15,7 @@ python main.py \
 --tmp_folder /tmp/clinical/chatgpt \
 --api chatgpt \
 --random_sampling_checkpoint gpt-4 \
---random_sampling_batch_size 4 \
+--random_sampling_batch_size 50 \
 --variation_checkpoint gpt-4 \
---variation_batch_size 4 \
+--variation_batch_size 50 \
 --api_key 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 
