@@ -75,7 +75,8 @@ def extract_features(
             raise Exception(f'Unknown model_name {model_name}')
 
         for i in tqdm(range(data.shape[0])):
-            np.savetxt(os.path.join(tmp_folder, f'{i}.txt'), data[i])
+            with open(os.path.join(tmp_folder, f'{i}.txt'), 'w', encoding='utf-8') as f:
+                f.write(str(data[i].tolist()))
         files = [os.path.join(tmp_folder, f'{i}.txt')
                 for i in range(data.shape[0])]
 

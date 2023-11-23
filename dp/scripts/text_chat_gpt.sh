@@ -11,15 +11,11 @@ python main.py \
 --num_private_samples 100 \
 --initial_prompt "Generate a dialog between a doctor and a patient" \
 --make_fid_stats False \
---result_folder /home/minsy/CUBIG/dp/result/clinical \
---tmp_folder /tmp/clinical \
---api llama2 \
---random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--result_folder /home/minsy/CUBIG/dp/result/clinical/chatgpt \
+--tmp_folder /tmp/clinical/chatgpt \
+--api chatgpt \
+--random_sampling_checkpoint gpt-4 \
 --random_sampling_batch_size 4 \
---variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--variation_checkpoint gpt-4 \
 --variation_batch_size 4 \
---max_seq_len 512 \
---top_k 10 \
---api_device 2 \
---data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/0/samples.npz \
---data_checkpoint_step 0
+--api_key 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 

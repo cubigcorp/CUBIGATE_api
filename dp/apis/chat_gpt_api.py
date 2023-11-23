@@ -165,15 +165,14 @@ class ChatGPTAPI(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            r = 0
-            while r < repeat:
-                prompts = "\nEND\n".join(target_samples)
-                prompts = prompts + "\n Above is a document. Paraphrase it. Leave 'END' unchanged."
-                messages = [
-                        {"role": "user", "content": prompts}
-                    ]
-                target_samples = self._generate(model=self._variation_checkpoint, messages=messages).split('END')
-                target_samples = [t.strip('\n') for t in target_samples]
+
+            prompts = "\nEND\n".join(target_samples)
+            prompts = prompts + "\n Above is a document. Paraphrase it. Leave 'END' unchanged."
+            messages = [
+                    {"role": "user", "content": prompts}
+                ]
+            target_samples = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree).split('END')
+            target_samples = [t.strip('\n') for t in target_samples]
             variation = target_samples
             variations.append(variation)
         variations = np.concatenate(variations, axis=0)

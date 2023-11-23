@@ -96,7 +96,8 @@ class Llama2API(API):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
-                response = self._random_sampling_api([prompt] * batch_size, batch_size=batch_size)
+                with torch.no_grad():
+                    response = self._random_sampling_api([prompt] * batch_size, batch_size=batch_size)
                 text = [r[0]['generated_text'] for r in response]
                 indices = [t.find(self.flag) for t in text]
                 text = [t[idx+len(self.flag):].strip('\n') for t, idx in zip(text, indices)]
@@ -127,16 +128,13 @@ class Llama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            r = 0
-            while r < repeat:
-                prompts = [sample + "\n Above is a document. Paraphrase it while keeping its basic structure." for sample in target_samples]
-                response = self._variation_api(prompts, batch_size=len(prompts))
-                text = [r[0]['generated_text'] for r in response]
-                indices = [t.find(self.flag) for t in text]
-                text = [t[idx + len(self.flag)].strip('\n') for t, idx in zip(text, indices)]
-                target_samples = text
-                r += 1
-            variation = target_samples
+            prompts = [sample + "\n Above is a document. Paraphrase it while keeping its basic structure." for sample in target_samples]
+            with torch.no_grad():
+                response = self._variation_api(prompts, batch_size=len(prompts), temperature=variation_degree)
+            text = [r[0]['generated_text'] for r in response]
+            indices = [t.find(self.flag) for t in text]
+            variation = [t[idx + len(self.flag)].strip('\n') for t, idx in zip(text, indices)]
+
             variations.append(variation)
         variations = np.concatenate(variations, axis=0)
         return variations
