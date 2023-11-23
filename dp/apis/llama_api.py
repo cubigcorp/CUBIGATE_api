@@ -37,7 +37,6 @@ class Llama2API(API):
         self._variation_api = self._random_sampling_api
         self._variation_batch_size = variation_batch_size
 
-        self._variation_api = variation_checkpoint
         #self._variation_pipe = self._variation_pipe.to(dev())
 
     @staticmethod

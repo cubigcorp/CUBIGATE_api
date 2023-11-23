@@ -221,7 +221,7 @@ def log_samples(samples, additional_info, folder, plot_samples, modality):
             if modality == 'image':
                 imageio.imwrite(os.path.join(folder, f'{i}.png'), samples[i])
             elif modality == 'text':
-                with open(os.path.join(folder, f"{i}.txt"), 'w') as f:
+                with open(os.path.join(folder, f"{i}.txt"), 'w', encoding='utf-8') as f:
                     f.write(samples[i])
             else:
                 raise Exception(f'Unknown modality {modality}')

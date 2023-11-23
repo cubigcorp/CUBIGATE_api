@@ -6,18 +6,20 @@ python main.py \
 --noise_multiplier 1.0 \
 --lookahead_degree 8 \
 --data_folder /home/minsy/CUBIG/dp/data/clinical/train \
---num_samples_schedule 1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200,1200 \
+--num_samples_schedule 100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100 \
 --variation_degree_schedule 0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,3 \
---num_private_samples 1200 \
+--num_private_samples 100 \
 --initial_prompt "Generate a dialog between a doctor and a patient" \
 --make_fid_stats False \
 --result_folder /home/minsy/CUBIG/dp/result/clinical \
 --tmp_folder /tmp/clinical \
 --api llama2 \
 --random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
---random_sampling_batch_size 5 \
+--random_sampling_batch_size 4 \
 --variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
---variation_batch_size 5 \
+--variation_batch_size 4 \
 --max_seq_len 512 \
 --top_k 10 \
---api_device 2
+--api_device 2 \
+--data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/0/samples.npz \
+--data_checkpoint_step 0
