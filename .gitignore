@@ -1,12 +1,15 @@
-*.zip
+docker
+models
 checkpoints
 lora
 result
 logs
+# All the data excluded
 *.gz
 *.png
 *.jpg
+*.csv
+*.txt
+*.zip
 *.pyc
 *.pt
-docker
-models

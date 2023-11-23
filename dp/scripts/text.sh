@@ -15,9 +15,9 @@ python main.py \
 --tmp_folder /tmp/clinical \
 --api llama2 \
 --random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
---random_sampling_batch_size 10 \
+--random_sampling_batch_size 5 \
 --variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
---variation_batch_size 10 \
+--variation_batch_size 5 \
 --max_seq_len 512 \
 --top_k 10 \
 --api_device 2
