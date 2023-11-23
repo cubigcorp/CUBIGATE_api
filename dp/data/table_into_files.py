@@ -5,26 +5,30 @@ import argparse
 def argument():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--text_file',
+        '--table_file',
         required=True,
-        type=str
+        type=str,
+        help="Path of the target table file."
     )
     parser.add_argument(
         '--result_dir',
         required=True,
-        type=str
+        type=str,
+        help="Path of the result directory. The final path will be result_dir/[test|train]"
     )
     parser.add_argument(
         '--train',
         action='store_true',
         required=False,
-        default=False
+        default=False,
+        help="Whether it is train dataset"
     )
     parser.add_argument(
         '--test',
         action='store_true',
         default=False,
-        required=False
+        required=False,
+        help="Whether it is a test dataset"
     )
     parser.add_argument(
         '--cols',
@@ -42,7 +46,8 @@ def argument():
     parser.add_argument(
         '--target',
         type=str,
-        required=False
+        required=False,
+        help="Not needed to be specified."
     )
     args = parser.parse_args()
     assert args.train ^ args.test
@@ -56,7 +61,7 @@ if __name__ == '__main__':
     cols = args.cols.split(',')
     assert args.label_col in cols, "Label column is specified but is not in the list of columns"
     label_idx = cols.index(args.label_col) if args.label_col is not None else None
-    df = pd.read_csv(args.text_file, usecols=cols)
+    df = pd.read_csv(args.table_file, usecols=cols)
     for row in df.itertuples(name=None):
         text = '\n\n'.join(row[1:])
         label = row[label_idx] if label_idx is not None else "UNCOND"
