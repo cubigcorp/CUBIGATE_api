@@ -457,7 +457,7 @@ def main():
 
         logging.info('Generating new samples')
         new_new_samples = api.variation(
-            images=new_samples,
+            samples=new_samples,
             additional_info=new_additional_info,
             num_variations_per_image=1,
             size=args.image_size,
