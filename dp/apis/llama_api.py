@@ -97,12 +97,7 @@ class Llama2API(API):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
-                with torch.no_grad():
-                    response = self._random_sampling_api([prompt] * batch_size, batch_size=batch_size)
-                text = [r[0]['generated_text'] for r in response]
-                indices = [t.find(self.random_flag) for t in text]
-                text = [t[idx+len(self.random_flag):].strip('\n') for t, idx in zip(text, indices)]
-
+                text = self._generate([prompt] * batch_size, batch_size=batch_size, variation=False)
                 texts.append(text)
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -130,15 +125,32 @@ class Llama2API(API):
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
             prompts = [sample + f"\n\n{self.variation_flag}" for sample in target_samples]
-            with torch.no_grad():
-                response = self._variation_api(prompts, batch_size=len(prompts), temperature=variation_degree)
-            texts = [r[0]['generated_text'] for r in response]
-            indices = [text.find(self.variation_flag) for text in texts]
-            variation = [text[idx + len(self.variation_flag):] for text, idx in zip(texts, indices) if idx >= 0]
-            variation = [v.strip('\n') for v in variation]
+            variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
             gc.collect()
         variations = np.concatenate(variations, axis=0)
         return variations
-    
+
+
+    def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None):
+        with torch.no_grad():
+            if variation:
+                response = self._variation_api(prompts, batch_size=len(prompts), temperature=variation_degree)
+            else:
+                response = self._random_sampling_api(prompts, batch_size=batch_size)
+        
+        responses = [r[0]['generated_text'] for r in response]
+        flag = self.variation_flag if variation else self.random_flag
+        indices = [text.find(flag) for text in responses]
+        striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        texts = [text for text in striped if text]
+
+        if not variation:
+            remain = batch_size - len(texts)
+            while remain:
+                sub_texts = self._generate(prompts=prompts[:remain], batch_size=remain, variation=False)[:remain]
+                texts.extend(sub_texts)
+                remain = batch_size - len(texts)
+        return texts
+                

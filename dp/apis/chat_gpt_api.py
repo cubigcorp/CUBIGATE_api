@@ -6,6 +6,7 @@ from wrapt_timeout_decorator import timeout
 from typing import Dict, List
 from dpsda.data_logger import log_samples, load_samples
 import os
+import logging
 # from dpsda.pytorch_utils import dev
 
 
@@ -71,26 +72,28 @@ class ChatGPTAPI(API):
 
             if self._live:
                 samples, pre_iter = self._live_load(self._live_loading_target)
-                texts.append(samples)
-                num_iterations -= pre_iter
+                if samples is not None:
+                    texts.append(samples)
+                    num_iterations -= pre_iter
             for iteration in tqdm(range(num_iterations)):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
 
-                prompt = prompt.replace('BATCH', f'{batch_size}') + " Each item does not have any title or number but a tail written as 'END'."
+                prompt = prompt.replace('BATCH', f'{batch_size}')
                 messages = [
                     {"role": "user", "content": prompt}
                 ]
 
-                response = self._generate(model=self._random_sampling_checkpoint, messages=messages).split('END')
-                text = [t.strip('END').strip('\n') for t in response]
-
+                response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
+                text = [t.strip('\n') for t in response]
+                text = [t for t in text if t][:batch_size]
                 remain = batch_size - len(text)
                 while remain > 0 :
                     prompt = prompt.replace(f'{batch_size}', f'{remain}')
-                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages).split('END')
-                    text = (text + [t.strip('END').strip('\n') for t in response])[:batch_size]
+                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
+                    temp = [t.strip('\n') for t in response]
+                    text = (text + [t for t in temp if t])[:batch_size]
                     remain = batch_size - len(text)
                 texts.append(text)
                 if self._live:
@@ -99,7 +102,6 @@ class ChatGPTAPI(API):
                         additional_info=[f'{iteration} iteration for random sampling'] * len(text),
                         prefix=f'initial_{iteration}'
                     )
-                
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
@@ -136,17 +138,20 @@ class ChatGPTAPI(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-
+            logging.debug(f"prompts length: {len(target_samples)}")
             prompts = "\nEND\n".join(target_samples)
-            prompts = prompts + "\n Above is a document. Paraphrase it. Leave 'END' unchanged."
+            prompts = prompts + "\n Above is a document. Paraphrase it while keeping its basic structure. Leave 'END' unchanged. Do not add any titles or numbers to each item."
             messages = [
                     {"role": "user", "content": prompts}
                 ]
-            target_samples = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree).split('END')
-            target_samples = [t.strip('\n') for t in target_samples]
-            variation = target_samples
+            response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
+            response = response.strip('END').split('END')
+            logging.debug(f"{iteration}_response length: {len(response)}")
+            variation = [r.strip('\n') for r in response]
+            logging.debug(f"{iteration}_variation length: {len(variation)}")
             variations.append(variation)
         variations = np.concatenate(variations, axis=0)
+        logging.debug(f"{iteration}_final shape: {variations.shape}")
         return variations
     
     @timeout(1000)
@@ -172,6 +177,8 @@ class ChatGPTAPI(API):
 
 
     def _live_load(self, path: str):
+        if path is None:
+            return None, 0
         samples, _ = load_samples(path)
         iteration = int(path.split('_')[-2])
         if iteration:

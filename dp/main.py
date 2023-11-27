@@ -327,6 +327,7 @@ def main():
             prompts=args.initial_prompt,
             num_samples=args.num_samples_schedule[0],
             size=args.image_size)
+        logging.info(f"Generated initial samples: {len(samples)}")
         log_samples(
             samples=samples,
             additional_info=additional_info,
