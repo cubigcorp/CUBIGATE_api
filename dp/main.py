@@ -446,7 +446,8 @@ def main():
             additional_info=new_additional_info,
             num_variations_per_sample=1,
             size=args.image_size,
-            variation_degree=args.variation_degree_schedule[t])
+            variation_degree=args.variation_degree_schedule[t],
+            t=t)
         new_new_samples = np.squeeze(new_new_samples, axis=1)
         new_new_additional_info = new_additional_info
 

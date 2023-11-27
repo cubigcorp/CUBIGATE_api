@@ -8,7 +8,7 @@ class API(ABC):
     def __init__(self, args=None):
         self.args = args
         self._result_folder = None
-        self._live = False
+        self._live = -1
         self._live_loading_target = None
 
     @staticmethod
@@ -34,8 +34,11 @@ class API(ABC):
         args = cls.command_line_parser().parse_args(args)
         api = cls(**vars(args), args=args)
         api._result_folder = result_folder
-        api._live = api._result_folder is not None
-        api._live_loading_target = live_loading_target
+        if api._result_folder is not None:
+            api._live = 0
+        if live_loading_target is not None:
+            api._live = 1
+            api._live_loading_target = live_loading_target
         return api
 
     @abstractmethod

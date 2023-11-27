@@ -22,4 +22,5 @@ python main.py \
 --api_key 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 \
 --data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/chatgpt/0/_samples.npz \
 --data_checkpoint_step 0 \
+--live_loading_target /home/minsy/CUBIG/dp/result/clinical/chatgpt/variation_1_0_samples.npz
 
