@@ -137,6 +137,8 @@ class Llama2API(API):
             variation = [text[idx + len(self.variation_flag):] for text, idx in zip(texts, indices) if idx >= 0]
             variation = [v.strip('\n') for v in variation]
             variations.append(variation)
+            torch.cuda.empty_cache()
+            gc.collect()
         variations = np.concatenate(variations, axis=0)
         return variations
     

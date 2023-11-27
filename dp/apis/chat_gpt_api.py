@@ -3,7 +3,9 @@ from tqdm import tqdm
 import openai
 from .api import API
 from wrapt_timeout_decorator import timeout
-from typing import Dict
+from typing import Dict, List
+from dpsda.data_logger import log_samples, load_samples
+import os
 # from dpsda.pytorch_utils import dev
 
 
@@ -66,6 +68,11 @@ class ChatGPTAPI(API):
             num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
             num_iterations = int(np.ceil(
                 float(num_samples_for_prompt) / max_batch_size))
+
+            if self._live:
+                samples, pre_iter = self._live_load(self._live_loading_target)
+                texts.append(samples)
+                num_iterations -= pre_iter
             for iteration in tqdm(range(num_iterations)):
                 batch_size = min(
                     max_batch_size,
@@ -86,11 +93,12 @@ class ChatGPTAPI(API):
                     text = (text + [t.strip('END').strip('\n') for t in response])[:batch_size]
                     remain = batch_size - len(text)
                 texts.append(text)
-                self._live_save(
-                    samples=text,
-                    additional_info=[f'{iteration} iteration for random sampling'] * len(text),
-                    prefix=f'initial_{iteration}'
-                )
+                if self._live:
+                    self._live_save(
+                        samples=text,
+                        additional_info=[f'{iteration} iteration for random sampling'] * len(text),
+                        prefix=f'initial_{iteration}'
+                    )
                 
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(texts, axis=0), np.array(return_prompts)
@@ -100,6 +108,10 @@ class ChatGPTAPI(API):
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
+        if self._live:
+            sub_variations, iteration = self._live_load(self._live_loading_target)
+            variations.append(sub_variations)
+            num_variations_per_sample -= iteration
         for iteration in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
@@ -107,11 +119,12 @@ class ChatGPTAPI(API):
                 size=size,
                 variation_degree=variation_degree)
             variations.append(sub_variations)
-            self._live_save(
-                samples=sub_variations,
-                additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
-                prefix=f'variation_{t}_{iteration}'
-            )
+            if self._live:
+                self._live_save(
+                    samples=sub_variations,
+                    additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
+                    prefix=f'variation_{t}_{iteration}'
+                )
         return np.stack(variations, axis=1)
 
     def _variation(self, samples, prompts, size, variation_degree):
@@ -119,7 +132,6 @@ class ChatGPTAPI(API):
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
-        repeat = int(variation_degree + 1)
         for iteration in tqdm(range(num_iterations), leave=False):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
@@ -148,3 +160,36 @@ class ChatGPTAPI(API):
                   temperature=temperature)
 
         return response.choices[0].message.content
+    
+    def _live_save(self, samples: List, additional_info, prefix: str):
+        log_samples(
+            samples=samples,
+            additional_info=additional_info,
+            folder=self._result_folder,
+            plot_samples=False,
+            save_npz=True,
+            prefix=prefix)
+
+
+    def _live_load(self, path: str):
+        samples, _ = load_samples(path)
+        iteration = int(path.split('_')[-2])
+        if iteration:
+            sub_samples = samples
+            samples = []
+            samples.append(sub_samples)
+            sub_iteration = iteration
+            while sub_iteration:
+                sub_iteration -= 1
+                dirname = os.path.dirname(path)
+                basename = os.path.basename(path).split("_")[:-2]
+                prev = os.path.join(dirname, f"{basename}_{iteration}_samples.npz")
+                if os.path.exists(prev):
+                    sub_samples, _ = load_samples(prev)
+                    samples.append(sub_samples)
+                else:
+                    return None, 0
+        iteration += 1
+                
+        return samples, iteration
+        

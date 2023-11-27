@@ -13,7 +13,7 @@ from dpsda.metrics import compute_fid
 from dpsda.dp_counter import dp_nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples
+from dpsda.data_logger import log_samples, load_samples
 
 
 def parse_args():
@@ -25,6 +25,10 @@ def parse_args():
     parser.add_argument(
             '--save_samples_live',
         action='store_true')
+    parser.add_argument(
+            '--live_loading_target',
+        type=str,
+        required=False)
     parser.add_argument(
         '--modality',
         type=str,
@@ -209,15 +213,8 @@ def parse_args():
                          'variation_degree_schedule should be the same')
 
     api_class = get_api_class_from_name(args.api)
-    api = api_class.from_command_line_args(api_args, live_save_folder)
+    api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target)
     return args, api
-
-
-def load_samples(path):
-    data = np.load(path)
-    samples = data['samples']
-    additional_info = data['additional_info']
-    return samples, additional_info
 
 
 def log_count(count, clean_count, path):
@@ -370,7 +367,7 @@ def main():
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
                 t=t)
-        print(packed_samples)
+
         packed_features = []
         logging.info('Running feature extraction')
         for i in range(packed_samples.shape[1]):

@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
 import argparse
 from typing import List
-from dpsda.data_logger import log_samples
-import os
+
 
 
 class API(ABC):
     def __init__(self, args=None):
         self.args = args
-        self.result_folder = None
+        self._result_folder = None
+        self._live = False
+        self._live_loading_target = None
 
     @staticmethod
     def command_line_parser():
@@ -19,7 +20,7 @@ class API(ABC):
         return parser
 
     @classmethod
-    def from_command_line_args(cls, args, result_folder):
+    def from_command_line_args(cls, args, result_folder, live_loading_target):
         """
         Creating the API from command line arguments.
 
@@ -32,7 +33,9 @@ class API(ABC):
         """
         args = cls.command_line_parser().parse_args(args)
         api = cls(**vars(args), args=args)
-        api.result_folder = result_folder
+        api._result_folder = result_folder
+        api._live = api._result_folder is not None
+        api._live_loading_target = live_loading_target
         return api
 
     @abstractmethod
@@ -93,14 +96,12 @@ class API(ABC):
                 variations as numpy arrays of type uint8.
         """
         pass
-    
-        @classmethod
+        
+        @abstractmethod
         def _live_save(self, samples: List, additional_info, prefix: str):
-            path = os.path.join(self.result_folder, prefix)
-            log_samples(
-                samples=samples,
-                additional_info=additional_info,
-                folder=self.result_folder,
-                plot_samples=False,
-                save_npz=True,
-                prefix=prefix)
+            pass
+
+        @abstractmethod
+        def _live_load(self, path: str):
+            pass
+            
