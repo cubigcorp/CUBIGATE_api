@@ -13,6 +13,7 @@ from dpsda.metrics import compute_fid
 from dpsda.dp_counter import dp_nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
+from dpsda.data_logger import log_samples
 
 
 def parse_args():
@@ -21,6 +22,9 @@ def parse_args():
             '--device',
         type=int,
         required=True)
+    parser.add_argument(
+            '--save_samples_live',
+        action='store_true')
     parser.add_argument(
         '--modality',
         type=str,
@@ -192,6 +196,7 @@ def parse_args():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, api_args = parser.parse_known_args()
+    live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
     variation_degree_type = (float if '.' in args.variation_degree_schedule
@@ -204,27 +209,8 @@ def parse_args():
                          'variation_degree_schedule should be the same')
 
     api_class = get_api_class_from_name(args.api)
-    api = api_class.from_command_line_args(api_args)
-
+    api = api_class.from_command_line_args(api_args, live_save_folder)
     return args, api
-
-
-def log_samples(samples, additional_info, folder, plot_samples, modality):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    np.savez(
-        os.path.join(folder, 'samples.npz'),
-        samples=samples,
-        additional_info=additional_info)
-    if plot_samples:
-        for i in range(samples.shape[0]):
-            if modality == 'image':
-                imageio.imwrite(os.path.join(folder, f'{i}.png'), samples[i])
-            elif modality == 'text':
-                with open(os.path.join(folder, f"{i}.txt"), 'w', encoding='utf-8') as f:
-                    f.write(samples[i])
-            else:
-                raise Exception(f'Unknown modality {modality}')
 
 
 def load_samples(path):
@@ -382,8 +368,9 @@ def main():
                 additional_info=additional_info,
                 num_variations_per_sample=args.lookahead_degree,
                 size=args.image_size,
-                variation_degree=args.variation_degree_schedule[t])
-
+                variation_degree=args.variation_degree_schedule[t],
+                t=t)
+        print(packed_samples)
         packed_features = []
         logging.info('Running feature extraction')
         for i in range(packed_samples.shape[1]):
@@ -459,7 +446,7 @@ def main():
         new_new_samples = api.variation(
             samples=new_samples,
             additional_info=new_additional_info,
-            num_variations_per_image=1,
+            num_variations_per_sample=1,
             size=args.image_size,
             variation_degree=args.variation_degree_schedule[t])
         new_new_samples = np.squeeze(new_new_samples, axis=1)
@@ -481,6 +468,7 @@ def main():
 
         samples = new_new_samples
         additional_info = new_new_additional_info
+
         log_samples(
             samples=samples,
             additional_info=additional_info,

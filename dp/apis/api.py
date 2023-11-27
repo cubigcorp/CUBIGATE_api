@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
 import argparse
+from typing import List
+from dpsda.data_logger import log_samples
+import os
 
 
 class API(ABC):
     def __init__(self, args=None):
         self.args = args
+        self.result_folder = None
 
     @staticmethod
     def command_line_parser():
@@ -15,7 +19,7 @@ class API(ABC):
         return parser
 
     @classmethod
-    def from_command_line_args(cls, args):
+    def from_command_line_args(cls, args, result_folder):
         """
         Creating the API from command line arguments.
 
@@ -27,7 +31,9 @@ class API(ABC):
                 The API object.
         """
         args = cls.command_line_parser().parse_args(args)
-        return cls(**vars(args), args=args)
+        api = cls(**vars(args), args=args)
+        api.result_folder = result_folder
+        return api
 
     @abstractmethod
     def random_sampling(self, num_samples, size, prompts=None):
@@ -58,7 +64,7 @@ class API(ABC):
 
     @abstractmethod
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree=None):
+                        num_variations_per_sample, size, variation_degree=None, t=None):
         """
         Generates a specified number of variations for each image in the input
         array.
@@ -87,3 +93,14 @@ class API(ABC):
                 variations as numpy arrays of type uint8.
         """
         pass
+    
+        @classmethod
+        def _live_save(self, samples: List, additional_info, prefix: str):
+            path = os.path.join(self.result_folder, prefix)
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=self.result_folder,
+                plot_samples=False,
+                save_npz=True,
+                prefix=prefix)

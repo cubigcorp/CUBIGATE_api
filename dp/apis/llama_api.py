@@ -29,7 +29,8 @@ class Llama2API(API):
             eos_token_id=self.tokenizer.eos_token_id,
             tokenizer=self.tokenizer
         )
-        self.flag = '\n'
+        self.random_flag = '\n'
+        self.variation_flag = 'Above is a document. Paraphrase it while keeping its basic structure.'
         self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
         
         self._random_sampling_batch_size = random_sampling_batch_size
@@ -99,8 +100,8 @@ class Llama2API(API):
                 with torch.no_grad():
                     response = self._random_sampling_api([prompt] * batch_size, batch_size=batch_size)
                 text = [r[0]['generated_text'] for r in response]
-                indices = [t.find(self.flag) for t in text]
-                text = [t[idx+len(self.flag):].strip('\n') for t, idx in zip(text, indices)]
+                indices = [t.find(self.random_flag) for t in text]
+                text = [t[idx+len(self.random_flag):].strip('\n') for t, idx in zip(text, indices)]
 
                 texts.append(text)
                 torch.cuda.empty_cache()
@@ -109,7 +110,7 @@ class Llama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree):
+                        num_variations_per_sample, size, variation_degree, t=None):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
@@ -128,13 +129,13 @@ class Llama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [sample + "\n Above is a document. Paraphrase it while keeping its basic structure." for sample in target_samples]
+            prompts = [sample + f"\n\n{self.variation_flag}" for sample in target_samples]
             with torch.no_grad():
                 response = self._variation_api(prompts, batch_size=len(prompts), temperature=variation_degree)
-            text = [r[0]['generated_text'] for r in response]
-            indices = [t.find(self.flag) for t in text]
-            variation = [t[idx + len(self.flag)].strip('\n') for t, idx in zip(text, indices)]
-
+            texts = [r[0]['generated_text'] for r in response]
+            indices = [text.find(self.variation_flag) for text in texts]
+            variation = [text[idx + len(self.variation_flag):] for text, idx in zip(texts, indices) if idx >= 0]
+            variation = [v.strip('\n') for v in variation]
             variations.append(variation)
         variations = np.concatenate(variations, axis=0)
         return variations
