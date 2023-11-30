@@ -37,6 +37,13 @@ def argument():
         help="list of columns to use and to be split by comma"
     )
     parser.add_argument(
+        '--sep',
+        required=False,
+        default=',',
+        type=str,
+        help="seperator for each item within a row"
+    )
+    parser.add_argument(
         '--label_col',
         required=False,
         default=None,
@@ -59,11 +66,13 @@ def argument():
 if __name__ == '__main__':
     args = argument()
     cols = args.cols.split(',')
-    assert args.label_col in cols, "Label column is specified but is not in the list of columns"
+    if args.label_col is not None: 
+        assert args.label_col in cols, "Label column is specified but is not in the list of columns"
     label_idx = cols.index(args.label_col) if args.label_col is not None else None
     df = pd.read_csv(args.table_file, usecols=cols)
     for row in df.itertuples(name=None):
-        text = '\n\n'.join(row[1:])
+        items = [str(i) for i in row[1:]]
+        text = args.sep.join(items)
         label = row[label_idx] if label_idx is not None else "UNCOND"
         with open(os.path.join(args.result_dir, f'{label}_{row[0]}.txt'), 'w') as f:
             f.write(text)

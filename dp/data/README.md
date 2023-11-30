@@ -8,11 +8,12 @@
 * 하나의 테이블에 모여 있는 데이터를 개별 파일로 바꾸는 작업이 필요하다면 `table_into_files.py` 참고
   
   ```
-  table_into_files.py --table_file [TABLE_FILE] --result_dir [RESULT_DIR] --cols [COLUMNS] --label_col [LABEL_COLUMN] --train --test 
+  table_into_files.py --table_file [TABLE_FILE] --result_dir [RESULT_DIR] --cols [COLUMNS] --label_col [LABEL_COLUMN] --sep [SEP] --train --test 
   ```
 
   * TABLE_FILE: 대상 테이블 파일의 경로
   * RESULT_DIR: 개별 파일을 저장할 디렉터리 경로, 해당 경로 하위에 train 또는 test 디렉터리가 생성되어 그 안에 개별 파일들이 저장됨
   * COLUMNS: 파일로 저장할 컬럼 목록, 띄어쓰기 없이 개별 컬럼은 콤마로 구분함
   * LABEL_COLUMN: 선택적, 컬럼 목록 중에서 라벨로 사용할 컬럼, 지정하지 않을 경우 UNCOND로 처리함
+  * SEP: 하나의 샘플 내에서 컬럼들을 구분할 문자
   * train, test: 대상 테이블 파일이 학습용인지 테스트용인지에 따라 둘 중 하나만 사용
