@@ -9,7 +9,7 @@ import cleanfid
 from cleanfid.features import build_feature_extractor
 from cleanfid.fid import get_folder_features
 from tqdm import tqdm
-from sentence_transformers import SenetenceTransformer
+from sentence_transformers import SentenceTransformer
 
 def round_to_uint8(image):
     return np.around(np.clip(image, a_min=0, a_max=255)).astype(np.uint8)
@@ -46,7 +46,7 @@ def cleanfid_make_custom_stats(
         custom_image_tranform = None
     elif model_name == "bert_base_nli_mean_tokens":
             
-        bert_fx = SenetenceTransformer("bert-base-nli-mean-tokens")
+        bert_fx = SentenceTransformer("bert-base-nli-mean-tokens")
         feat_model = bert_fx
     else:
         raise ValueError(
