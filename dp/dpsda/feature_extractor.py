@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from cleanfid.resize import make_resizer
-from sentence_transformers import SenetenceTransformer
+from sentence_transformers import SentenceTransformer
 
 
 def round_to_uint8(image):
@@ -41,7 +41,7 @@ def extract_features(
             custom_fn_resize = img_preprocess_clip
         elif model_name == "bert_base_nli_mean_tokens":
             
-            bert_fx = SenetenceTransformer("bert-base-nli-mean-tokens")
+            bert_fx = SentenceTransformer("bert-base-nli-mean-tokens")
             feat_model = bert_fx
         else:
             raise Exception(f'Unknown model_name {model_name}')
