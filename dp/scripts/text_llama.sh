@@ -20,6 +20,4 @@ python main.py \
 --variation_batch_size 1 \
 --max_seq_len 512 \
 --top_k 10 \
---api_device 2 \
---data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/1/_samples.npz \
---data_checkpoint_step 1
+--api_device 2 

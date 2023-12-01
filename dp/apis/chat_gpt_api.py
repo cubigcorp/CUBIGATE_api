@@ -112,7 +112,7 @@ class ChatGPTAPI(API):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
 
-        if self._live == 1:
+        if (self._live == 1) and ('sub' not in self._live_loading_target):
             sub_variations, iteration = self._live_load(self._live_loading_target)
             variations.append(sub_variations)
             num_variations_per_sample -= iteration
@@ -125,7 +125,8 @@ class ChatGPTAPI(API):
                 samples=samples,
                 prompts=list(additional_info),
                 size=size,
-                variation_degree=variation_degree)
+                variation_degree=variation_degree,
+                t=t)
 
             variations.append(sub_variations)
             if self._live == 0:
@@ -134,15 +135,21 @@ class ChatGPTAPI(API):
                     additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
                     prefix=f'variation_{t}_{iteration}'
                 )
-        for v in variations:
-            print(v.shape)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, prompts, size, variation_degree):
+    def _variation(self, samples, prompts, size, variation_degree, t):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
+        if (self._live == 1) and ('sub' in self._live_loading_target):
+            variation, iteration = self._live_load(self._live_loading_target)
+            variations.append(variation)
+            num_iterations -= iteration
+            self._live = 0
+            logging.debug(f"Loaded {self._live_loading_target}")
+            logging.debug(f"Start iteration from {iteration}")
+            logging.debug(f"Remaining {num_iterations} iteration")
         for iteration in tqdm(range(num_iterations), leave=False):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
@@ -159,6 +166,12 @@ class ChatGPTAPI(API):
             variation = [r.strip('\n') for r in response]
             logging.debug(f"{iteration}_variation length: {len(variation)}")
             variations.append(variation)
+            if self._live == 0:
+                self._live_save(
+                    samples=variation,
+                    additional_info=[f'{iteration} iteration for sub-variation'] * len(variation),
+                    prefix=f'sub_variation_{t}_{iteration}'
+                )
         variations = np.concatenate(variations, axis=0)
         print(variations[0])
         logging.debug(f"{iteration}_final shape: {variations.shape}")

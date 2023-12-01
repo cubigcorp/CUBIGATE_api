@@ -398,7 +398,9 @@ def main():
                 noise_multiplier=args.noise_multiplier,
                 num_nearest_neighbor=args.num_nearest_neighbor,
                 mode=args.nn_mode,
-                threshold=args.count_threshold)
+                threshold=args.count_threshold,
+                t=t,
+                result_folder=args.result_folder)
             log_count(
                 sub_count,
                 sub_clean_count,
@@ -439,6 +441,7 @@ def main():
         new_indices = np.concatenate(new_indices)
         new_samples = samples[new_indices]
         new_additional_info = additional_info[new_indices]
+        logging.debug(f"new_indices: {new_indices}")
 
         logging.info('Generating new samples')
         new_new_samples = api.variation(

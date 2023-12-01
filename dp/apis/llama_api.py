@@ -5,6 +5,8 @@ from .api import API
 from transformers import AutoTokenizer
 import transformers
 import gc
+from typing import List
+from dpsda.data_logger import log_samples, load_samples
 # from dpsda.pytorch_utils import dev
 
 
@@ -136,7 +138,7 @@ class Llama2API(API):
     def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None):
         with torch.no_grad():
             if variation:
-                response = self._variation_api(prompts, batch_size=len(prompts), temperature=variation_degree)
+                response = self._variation_api(prompts, batch_size=batch_size, temperature=variation_degree)
             else:
                 response = self._random_sampling_api(prompts, batch_size=batch_size)
         
@@ -146,11 +148,43 @@ class Llama2API(API):
         striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
         texts = [text for text in striped if text]
 
-        if not variation:
+        remain = batch_size - len(texts)
+        while remain:
+            sub_texts = self._generate(prompts=prompts[:remain], batch_size=remain, variation=False)[:remain]
+            texts.extend(sub_texts)
             remain = batch_size - len(texts)
-            while remain:
-                sub_texts = self._generate(prompts=prompts[:remain], batch_size=remain, variation=False)[:remain]
-                texts.extend(sub_texts)
-                remain = batch_size - len(texts)
         return texts
+
+    def _live_save(self, samples: List, additional_info, prefix: str):
+        log_samples(
+            samples=samples,
+            additional_info=additional_info,
+            folder=self._result_folder,
+            plot_samples=False,
+            save_npz=True,
+            prefix=prefix)
+
+
+    def _live_load(self, path: str):
+        if path is None:
+            return None, 0
+        samples, _ = load_samples(path)
+        iteration = int(path.split('_')[-2])
+        if iteration:
+            sub_samples = samples
+            samples = []
+            samples.append(sub_samples)
+            sub_iteration = iteration
+            while sub_iteration:
+                sub_iteration -= 1
+                dirname = os.path.dirname(path)
+                basename = os.path.basename(path).split("_")[:-2]
+                prev = os.path.join(dirname, f"{basename}_{iteration}_samples.npz")
+                if os.path.exists(prev):
+                    sub_samples, _ = load_samples(prev)
+                    samples.append(sub_samples)
+                else:
+                    return None, 0
+        iteration += 1
                 
+        return samples, iteration

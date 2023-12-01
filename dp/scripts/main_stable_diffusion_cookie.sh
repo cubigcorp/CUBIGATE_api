@@ -14,8 +14,8 @@ python main.py \
 --num_private_samples 100 \
 --initial_prompt "A photo of ragdoll cat" \
 --make_fid_stats True \
---result_folder result_cookie \
---tmp_folder /tmp/result_cookie \
+--result_folder result/cookie \
+--tmp_folder /tmp/result/cookie \
 --api stable_diffusion \
 --random_sampling_checkpoint 'runwayml/stable-diffusion-v1-5' \
 --random_sampling_guidance_scale 7.5 \
@@ -24,4 +24,7 @@ python main.py \
 --variation_checkpoint 'CompVis/stable-diffusion-v1-4' \
 --variation_guidance_scale 7.5 \
 --variation_num_inference_steps 50 \
---variation_batch_size 10
+--variation_batch_size 10 \
+--device 2 \
+--api_device 2 \
+--modality image

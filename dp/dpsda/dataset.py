@@ -19,7 +19,7 @@ def _list_files_recursively(data_dir, modality):
         if "." in entry and ext.lower() in EXTENSIONS[modality]:
             results.append(full_path)
         elif bf.isdir(full_path):
-            results.extend(_list_files_recursively(full_path))
+            results.extend(_list_files_recursively(full_path, modality))
     return results
 
 
