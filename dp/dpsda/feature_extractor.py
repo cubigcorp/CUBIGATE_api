@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from cleanfid.resize import make_resizer
-from sentence_transformers import SentenceTransformer
+
 
 
 def round_to_uint8(image):
@@ -74,15 +74,17 @@ def extract_features(
             from dpsda.text_feature_extractor import CLIP_fx_txt, get_files_features
             feat_model = CLIP_fx_txt("ViT-B/32", device=device)
         elif model_name == "bert_base_nli_mean_tokens":
-            
-            bert_fx = SentenceTransformer("bert-base-nli-mean-tokens")
+            from dpsda.text_feature_extractor import BERT_fx_txt, get_files_features
+            bert_fx = BERT_fx_txt("bert-base-nli-mean-tokens", device=device)
             feat_model = bert_fx
         else:
             raise Exception(f'Unknown model_name {model_name}')
 
         for i in tqdm(range(data.shape[0])):
-            with open(os.path.join(tmp_folder, f'{i}.txt'), 'w', encoding='utf-8') as f:
-                f.write(str(data[i].tolist()))
+            with open(os.path.join(tmp_folder, f'{i}.txt'), 'w') as f:
+                item = [str(d) for d in data[i]]
+                text = ','.join(item)
+                f.write(text)
         files = [os.path.join(tmp_folder, f'{i}.txt')
                 for i in range(data.shape[0])]
 

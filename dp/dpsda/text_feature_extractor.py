@@ -26,6 +26,8 @@ def get_files_features(l_files, model=None, num_workers=12,
         pbar = dataloader
     
     for batch in pbar:
+        if isinstance(batch, list):
+            batch = torch.tensor(batch)
         l_feats.append(get_batch_features(batch, model, device))
     np_feats = np.concatenate(l_feats)
     return np_feats
@@ -37,13 +39,15 @@ class CLIP_fx_txt():
         self.name = "clip_"+name.lower().replace("-","_").replace("/","_")
     
     def __call__(self, txt):
+
         with torch.no_grad():
             z = self.model.encode_text(txt)
         return z
     
 class BERT_fx_txt():
     def __init__(self, name="base-nli-mean-tokens", device="cuda"):
-        self.model, _ = SentenceTransformer("bert-base-nli-mean-tokens")
+        self.model = SentenceTransformer(name)
+        self.model.to(device)
         self.model.eval()
         self.name = "bert_"+name.lower().replace("-","_").replace("/","_")
     
@@ -86,7 +90,7 @@ class ResizeDataset(torch.utils.data.Dataset):
         else:
             with open(path, 'r') as f:
                 txt_str = f.read()
-
-        txt_np = clip.tokenize(txt_str, truncate=True).numpy().squeeze()
+        txt_str = txt_str.split(',')
+        txt_np = np.array(txt_str, dtype=np.int32)
 
         return txt_np

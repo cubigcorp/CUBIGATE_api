@@ -8,7 +8,7 @@ from .dataset import ImageDataset, TextDataset
 
 
 def load_data(data_dir, batch_size, image_size, class_cond,
-              num_private_samples, modality: str):
+              num_private_samples, modality: str, model=None):
 
     if modality == 'image':
         transform = T.Compose([
@@ -18,7 +18,7 @@ def load_data(data_dir, batch_size, image_size, class_cond,
         ])
         dataset = ImageDataset(folder=data_dir, transform=transform)
     elif modality == 'text':
-        dataset = TextDataset(folder=data_dir)
+        dataset = TextDataset(folder=data_dir, model=model)
 
     loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=10,
                         pin_memory=torch.cuda.is_available(), drop_last=False)
@@ -45,6 +45,8 @@ def load_data(data_dir, batch_size, image_size, class_cond,
         all_samples = np.around(np.clip(
             all_samples * 255, a_min=0, a_max=255)).astype(np.uint8)
         all_samples = np.transpose(all_samples, (0, 2, 3, 1))
+    elif modality == 'text':
+        all_samples = all_samples.astype(np.int32)
     if class_cond:
         all_labels = np.concatenate(all_labels, axis=0)
         all_labels = all_labels[:num_private_samples]

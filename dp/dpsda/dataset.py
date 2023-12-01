@@ -53,13 +53,14 @@ class ImageDataset(Dataset):
         return arr, label
 
 class TextDataset(Dataset):
-    def __init__(self, folder):
+    def __init__(self, folder, model):
         self.folder = folder
         self.local_texts = _list_files_recursively(folder, 'text')
         class_name = [bf.basename(path).split('_')[0]
                       for path in self.local_texts]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_name)))}
         self.local_classes = [sorted_classes[x] for x in class_name]
+        self.model = model
 
     def __len__(self):
         return len(self.local_texts)
@@ -68,10 +69,10 @@ class TextDataset(Dataset):
         path = self.local_texts[idx]
         with bf.BlobFile(path, 'r') as f:
             lines = f.read()
-        if type=="bert":
+        if self.model == "bert_base_nli_mean_tokens":
             tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/bert-base-nli-mean-tokens')
             arr=tokenizer.encode_plus(lines, truncation=True)
-        else:
+        elif self.model == 'clip_vit_b_32':
             arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
         label = self.local_classes[idx]
         return arr, label

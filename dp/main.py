@@ -284,7 +284,8 @@ def main():
         image_size=args.private_image_size,
         class_cond=args.gen_class_cond,
         num_private_samples=args.num_private_samples,
-        modality=args.modality)
+        modality=args.modality,
+        model=args.feature_extractor)
 
     private_classes = list(sorted(set(list(all_private_labels))))
     private_num_classes = len(private_classes)
