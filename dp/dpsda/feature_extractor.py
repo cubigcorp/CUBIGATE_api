@@ -39,10 +39,6 @@ def extract_features(
             clip_fx = CLIP_fx("ViT-B/32", device=device)
             feat_model = clip_fx
             custom_fn_resize = img_preprocess_clip
-        elif model_name == "bert_base_nli_mean_tokens":
-            
-            bert_fx = SentenceTransformer("bert-base-nli-mean-tokens")
-            feat_model = bert_fx
         else:
             raise Exception(f'Unknown model_name {model_name}')
 
@@ -77,6 +73,10 @@ def extract_features(
         if model_name == "clip_vit_b_32":
             from dpsda.text_feature_extractor import CLIP_fx_txt, get_files_features
             feat_model = CLIP_fx_txt("ViT-B/32", device=device)
+        elif model_name == "bert_base_nli_mean_tokens":
+            
+            bert_fx = SentenceTransformer("bert-base-nli-mean-tokens")
+            feat_model = bert_fx
         else:
             raise Exception(f'Unknown model_name {model_name}')
 

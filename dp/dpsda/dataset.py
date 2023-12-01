@@ -53,7 +53,7 @@ class ImageDataset(Dataset):
         return arr, label
 
 class TextDataset(Dataset):
-    def __init__(self, folder, type):
+    def __init__(self, folder):
         self.folder = folder
         self.local_texts = _list_files_recursively(folder, 'text')
         class_name = [bf.basename(path).split('_')[0]
