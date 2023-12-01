@@ -5,6 +5,8 @@ import zipfile
 import numpy as np
 from tqdm import tqdm
 import clip
+from sentence_transformers import SenetenceTransformer
+
 
 def get_files_features(l_files, model=None, num_workers=12,
                        batch_size=128, device=torch.device("cuda"),
@@ -38,6 +40,18 @@ class CLIP_fx_txt():
         with torch.no_grad():
             z = self.model.encode_text(txt)
         return z
+    
+class BERT_fx_txt():
+    def __init__(self, name="base-nli-mean-tokens", device="cuda"):
+        self.model, _ = SenetenceTransformer("bert-base-nli-mean-tokens")
+        self.model.eval()
+        self.name = "bert_"+name.lower().replace("-","_").replace("/","_")
+    
+    def __call__(self, txt):
+        with torch.no_grad():
+            z = self.model.encode(txt)
+        return z
+
 
 class ResizeDataset(torch.utils.data.Dataset):
     """

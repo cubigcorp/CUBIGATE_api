@@ -3,6 +3,9 @@ import blobfile as bf
 import numpy as np
 from torch.utils.data import Dataset
 import clip
+from transformers import AutoTokenizer, AutoModel
+import torch
+
 
 EXTENSIONS={
     'image':
@@ -50,7 +53,7 @@ class ImageDataset(Dataset):
         return arr, label
 
 class TextDataset(Dataset):
-    def __init__(self, folder):
+    def __init__(self, folder, type):
         self.folder = folder
         self.local_texts = _list_files_recursively(folder, 'text')
         class_name = [bf.basename(path).split('_')[0]
@@ -65,6 +68,10 @@ class TextDataset(Dataset):
         path = self.local_texts[idx]
         with bf.BlobFile(path, 'r') as f:
             lines = f.read()
-        arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
+        if type=="bert":
+            tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/bert-base-nli-mean-tokens')
+            arr=tokenizer.encode_plus(lines, truncation=True)
+        else:
+            arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
         label = self.local_classes[idx]
         return arr, label

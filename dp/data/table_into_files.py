@@ -20,7 +20,7 @@ def argument():
         '--train',
         action='store_true',
         required=False,
-        default=False,
+        default=True,
         help="Whether it is train dataset"
     )
     parser.add_argument(
@@ -32,16 +32,9 @@ def argument():
     )
     parser.add_argument(
         '--cols',
-        required=True,
+        required=False,
         type=str,
         help="list of columns to use and to be split by comma"
-    )
-    parser.add_argument(
-        '--sep',
-        required=False,
-        default=',',
-        type=str,
-        help="seperator for each item within a row"
     )
     parser.add_argument(
         '--label_col',
@@ -65,14 +58,18 @@ def argument():
 
 if __name__ == '__main__':
     args = argument()
-    cols = args.cols.split(',')
-    if args.label_col is not None: 
-        assert args.label_col in cols, "Label column is specified but is not in the list of columns"
+    if args.cols:
+        cols = args.cols.split(',')
+        df = pd.read_csv(args.table_file, usecols=cols)
+    else:
+        df=pd.read_csv(args.table_file)
+        
+    #assert args.label_col in cols, "Label column is specified but is not in the list of columns"
     label_idx = cols.index(args.label_col) if args.label_col is not None else None
-    df = pd.read_csv(args.table_file, usecols=cols)
+   
     for row in df.itertuples(name=None):
         items = [str(i) for i in row[1:]]
-        text = args.sep.join(items)
+        text = ' '.join(items) 
         label = row[label_idx] if label_idx is not None else "UNCOND"
         with open(os.path.join(args.result_dir, f'{label}_{row[0]}.txt'), 'w') as f:
             f.write(text)

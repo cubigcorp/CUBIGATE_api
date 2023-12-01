@@ -2,8 +2,8 @@ import argparse
 import logging
 import os
 import numpy as np
-import imageio
-from torchvision.utils import make_grid
+#import imageio
+#from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_data
@@ -32,19 +32,19 @@ def parse_args():
     parser.add_argument(
         '--modality',
         type=str,
-        choices=['image', 'text'],
+        choices=['image', 'text'], #Tabular: text
         required=True)
     parser.add_argument(
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2'],
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2'], #Tabular_1:Chatgpt
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',
         type=str2bool,
         default=True,
-        help='Whether to save generated images in PNG files')
+        help='Whether to save generated images in PNG files')  #False
     parser.add_argument(
         '--data_checkpoint_path',
         type=str,
@@ -79,30 +79,30 @@ def parse_args():
         '--noise_multiplier',
         type=float,
         default=0.0,
-        help='Noise multiplier for DP NN histogram')
+        help='Noise multiplier for DP NN histogram')    #noise_multiplier => how??
     parser.add_argument(
         '--lookahead_degree',
         type=int,
         default=0,
-        help=('Lookahead degree for computing distances between private and '
+        help=('Lookahead degree for computing distances between private and '  #
               'generated images'))
     parser.add_argument(
         '--feature_extractor',
         type=str,
         default='clip_vit_b_32',
-        choices=['inception_v3', 'clip_vit_b_32', 'original'],
+        choices=['bert_base_nli_mean_tokens', 'inception_v3', 'clip_vit_b_32', 'original'], 
         help='Which image feature extractor to use')
     parser.add_argument(
         '--num_nearest_neighbor',
         type=int,
         default=1,
-        help='Number of nearest neighbors to find in DP NN histogram')
+        help='Number of nearest neighbors to find in DP NN histogram')   ###몇개가 적절할지??
     parser.add_argument(
         '--nn_mode',
         type=str,
         default='L2',
         choices=['L2', 'IP'],
-        help='Which distance metric to use in DP NN histogram')
+        help='Which distance metric to use in DP NN histogram')   ##Bert랑 같이 similarty로 갈지 논의
     parser.add_argument(
         '--private_image_size',
         type=int,
@@ -127,7 +127,7 @@ def parse_args():
         '--count_threshold',
         type=float,
         default=0.0,
-        help='Threshold for DP NN histogram')
+        help='Threshold for DP NN histogram')  #얼마로??
     parser.add_argument(
         '--compute_fid',
         type=str2bool,
@@ -172,7 +172,7 @@ def parse_args():
         default=100,
         help='Batch size for loading private samples')
     parser.add_argument(
-        '--feature_extractor_batch_size',
+        '--feature_extractor_batch_size',   #BERT생각하면서 고민
         type=int,
         default=500,
         help='Batch size for feature extraction')
