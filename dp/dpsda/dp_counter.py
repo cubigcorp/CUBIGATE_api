@@ -8,6 +8,7 @@ import torch
 def dp_nn_histogram(public_features, private_features, noise_multiplier,
                     num_packing=1, num_nearest_neighbor=1, mode='L2',
                     threshold=0.0):
+    
     assert public_features.shape[0] % num_packing == 0
     num_true_public_features = public_features.shape[0] // num_packing
     faiss_res = faiss.StandardGpuResources()
