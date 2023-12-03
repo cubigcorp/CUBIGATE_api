@@ -359,7 +359,6 @@ def main():
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
-
         if args.lookahead_degree == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
@@ -371,17 +370,15 @@ def main():
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
                 t=t)
-        print(packed_samples.shape)
         if args.modality == 'text':
             packed_tokens = []
-            for samples in packed_samples:
-                tokens = [tokenize(args.feature_extractor, t) for t in samples]
+            for packed_sample in packed_samples:
+                tokens = [tokenize(args.feature_extractor, t) for t in packed_sample]
                 sub_tokens = np.array(tokens)
                 packed_tokens.append(sub_tokens)
             packed_tokens = np.array(packed_tokens)
         else:
             packed_tokens = packed_samples
-
         packed_features = []
         logging.info('Running feature extraction')
         for i in range(packed_samples.shape[1]):
@@ -398,7 +395,6 @@ def main():
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
         packed_features = np.mean(packed_features, axis=0)
-
         logging.info('Computing histogram')
         count = []
         for class_i, class_ in enumerate(private_classes):
@@ -420,7 +416,6 @@ def main():
                 f'{args.result_folder}/{t}/count_class{class_}.npz')
             count.append(sub_count)
         count = np.concatenate(count)
-
         if args.modality == 'image':
             for class_i, class_ in enumerate(private_classes):
                 visualize(
@@ -435,7 +430,6 @@ def main():
                         num_samples_per_class * (class_i + 1)],
                     folder=f'{args.result_folder}/{t}',
                     suffix=f'class{class_}')
-
         logging.info('Generating new indices')
         assert args.num_samples_schedule[t] % private_num_classes == 0
         new_num_samples_per_class = (
@@ -455,7 +449,6 @@ def main():
         new_samples = samples[new_indices]
         new_additional_info = additional_info[new_indices]
         logging.debug(f"new_indices: {new_indices}")
-
         logging.info('Generating new samples')
         new_new_samples = api.variation(
             samples=new_samples,

@@ -174,20 +174,26 @@ class ChatGPTAPI(API):
                     prefix=f'sub_variation_{t}_{iteration}'
                 )
         variations = np.concatenate(variations, axis=0)
-        print(variations[0])
+
         logging.debug(f"{iteration}_final shape: {variations.shape}")
         return variations
     
     @timeout(1000)
-    def _generate(self, model: str, messages: Dict, n: int=1, stop: str=None, temperature: float=1):
+    def _generate(self, model: str, messages: Dict, batch_size=1, stop: str=None, temperature: float=1):
         response = openai.ChatCompletion.create(
                   model=model, 
                   messages=messages,
                   request_timeout = 1000,
-                  n=n,
                   stop=stop,
                   temperature=temperature)
+        # generated = response.choices[0].message.content.strip('END').split('END')
+        # text = []
+        # for temp in generated:
+        #     temp = temp.strip('\n')
+        #     if temp is not None:
+        #         text.append(temp)
 
+        
         return response.choices[0].message.content
     
     def _live_save(self, samples: List, additional_info, prefix: str):

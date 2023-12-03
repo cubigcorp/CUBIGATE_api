@@ -144,11 +144,13 @@ class Llama2API(API):
                 response = self._random_sampling_api(prompts, batch_size=batch_size)
         
         responses = [r[0]['generated_text'] for r in response]
+        # prompt가 대답에 그대로 나타날 경우 제거
         flag = self.variation_flag if variation else self.random_flag
         indices = [text.find(flag) for text in responses]
         striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        # None인 경우 제거
         texts = [text for text in striped if text]
-
+        # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
         while remain:
             sub_texts = self._generate(prompts=prompts[:remain], batch_size=remain, variation=False)[:remain]

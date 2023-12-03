@@ -15,11 +15,11 @@ python main.py \
 --tmp_folder /tmp/clinical/chatgpt4 \
 --api chatgpt \
 --random_sampling_checkpoint gpt-4-1106-preview \
---random_sampling_batch_size 10 \
+--random_sampling_batch_size 1 \
 --variation_checkpoint gpt-4-1106-preview \
---variation_batch_size 10 \
+--variation_batch_size 1 \
 --save_samples_live \
---api_key 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 \
+--api_key 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 \
 # --data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/chatgpt/1/_samples.npz \
 # --data_checkpoint_step 1 \
 # --live_loading_target /home/minsy/CUBIG/dp/result/clinical/chatgpt/variation_2_0_samples.npz

@@ -25,8 +25,8 @@ def dp_nn_histogram(public_features, private_features, noise_multiplier,
     logging.info(f'Number of samples in index: {index.ntotal}')
 
     distances, ids = index.search(private_features, k=num_nearest_neighbor)
-    logging.debug(f"distances:\n{distances}")
-    logging.debug(f"ids:\n:{ids}")
+    logging.debug(f"distances:\n{distances.squeeze()}")
+    logging.debug(f"ids:\n:{ids.squeeze()}")
     logging.info('Finished search')
     counter = Counter(list(ids.flatten()))
     logging.debug(f"counter: {counter}")

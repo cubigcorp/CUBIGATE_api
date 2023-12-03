@@ -15,12 +15,12 @@ python main.py \
 --tmp_folder /tmp/clinical/chatgpt3 \
 --api chatgpt \
 --random_sampling_checkpoint gpt-3.5-turbo-1106 \
---random_sampling_batch_size 2 \
+--random_sampling_batch_size 1 \
 --variation_checkpoint gpt-3.5-turbo-1106 \
---variation_batch_size 2 \
+--variation_batch_size 1 \
 --save_samples_live \
 --api_key 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 \
-# --data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/chatgpt/1/_samples.npz \
-# --data_checkpoint_step 1 \
-# --live_loading_target /home/minsy/CUBIG/dp/result/clinical/chatgpt/variation_2_0_samples.npz
+--data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/chatgpt3/0/_samples.npz \
+--data_checkpoint_step 0 \
+--live_loading_target /home/minsy/CUBIG/dp/result/clinical/chatgpt3/variation_1_0_samples.npz
 
