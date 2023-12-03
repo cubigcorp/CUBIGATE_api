@@ -6,14 +6,16 @@ import numpy as np
 #from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
-from dpsda.data_loader import load_data
+from dpsda.data_loader import load_data, load_samples
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_fid
 from dpsda.dp_counter import dp_nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples, load_samples
+from dpsda.data_logger import log_samples
+from dpsda.tokenizer import tokenize
+
 
 
 def parse_args():
@@ -369,12 +371,22 @@ def main():
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
                 t=t)
+        print(packed_samples.shape)
+        if args.modality == 'text':
+            packed_tokens = []
+            for samples in packed_samples:
+                tokens = [tokenize(args.feature_extractor, t) for t in samples]
+                sub_tokens = np.array(tokens)
+                packed_tokens.append(sub_tokens)
+            packed_tokens = np.array(packed_tokens)
+        else:
+            packed_tokens = packed_samples
 
         packed_features = []
         logging.info('Running feature extraction')
         for i in range(packed_samples.shape[1]):
             sub_packed_features = extract_features(
-                data=packed_samples[:, i],
+                data=packed_tokens[:, i],
                 tmp_folder=args.tmp_folder,
                 model_name=args.feature_extractor,
                 res=args.private_image_size,

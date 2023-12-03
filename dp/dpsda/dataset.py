@@ -1,10 +1,9 @@
 from PIL import Image
 import blobfile as bf
-import numpy as np
 from torch.utils.data import Dataset
 import clip
-from transformers import AutoTokenizer, AutoModel
-import torch
+from transformers import AutoTokenizer
+from dpsda.tokenizer import tokenize
 
 
 EXTENSIONS={
@@ -69,10 +68,11 @@ class TextDataset(Dataset):
         path = self.local_texts[idx]
         with bf.BlobFile(path, 'r') as f:
             lines = f.read()
-        if self.model == "bert_base_nli_mean_tokens":
-            tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/bert-base-nli-mean-tokens')
-            arr=tokenizer.encode_plus(lines, truncation=True)
-        elif self.model == 'clip_vit_b_32':
-            arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
+        arr = tokenize(self.model, lines)
+        # if self.model == "bert_base_nli_mean_tokens":
+        #     tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/bert-base-nli-mean-tokens')
+        #     arr=tokenizer.encode_plus(lines, truncation=True)
+        # elif self.model == 'clip_vit_b_32':
+        #     arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
         label = self.local_classes[idx]
         return arr, label

@@ -19,10 +19,3 @@ def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, sa
                     f.write(samples[i])
             else:
                 raise Exception(f'Unknown modality {modality}')
-
-
-def load_samples(path):
-    data = np.load(path)
-    samples = data['samples']
-    additional_info = data['additional_info']
-    return samples, additional_info

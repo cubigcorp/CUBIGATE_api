@@ -53,3 +53,10 @@ def load_data(data_dir, batch_size, image_size, class_cond,
     else:
         all_labels = np.zeros(shape=all_samples.shape[0], dtype=np.int64)
     return all_samples, all_labels
+
+
+def load_samples(path):
+    data = np.load(path)
+    samples = data['samples']
+    additional_info = data['additional_info']
+    return samples, additional_info

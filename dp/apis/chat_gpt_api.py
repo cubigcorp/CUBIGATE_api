@@ -4,7 +4,8 @@ import openai
 from .api import API
 from wrapt_timeout_decorator import timeout
 from typing import Dict, List
-from dpsda.data_logger import log_samples, load_samples
+from dpsda.data_logger import log_samples
+from dpsda.data_loader import load_samples
 import os
 import logging
 # from dpsda.pytorch_utils import dev

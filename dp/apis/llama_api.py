@@ -6,7 +6,8 @@ from transformers import AutoTokenizer
 import transformers
 import gc
 from typing import List
-from dpsda.data_logger import log_samples, load_samples
+from dpsda.data_logger import log_samples
+from dpsda.data_loader import load_samples
 # from dpsda.pytorch_utils import dev
 
 
