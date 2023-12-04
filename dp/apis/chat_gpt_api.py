@@ -17,6 +17,7 @@ class ChatGPTAPI(API):
                  variation_checkpoint,
                  variation_batch_size,
                  api_key,
+                 variation_prompt_path,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
@@ -27,7 +28,8 @@ class ChatGPTAPI(API):
         self._variation_batch_size = variation_batch_size
 
         self._variation_api = variation_checkpoint
-        #self._variation_pipe = self._variation_pipe.to(dev())
+        with open(variation_prompt_path, 'r') as f:
+            self.variation_prompt = f.read()
 
     @staticmethod
     def command_line_parser():
@@ -60,7 +62,7 @@ class ChatGPTAPI(API):
             default=10,
             help='The batch size for variation API')
         parser.add_argument(
-            '--variation_prompt',
+            '--variation_prompt_path',
             required=True,
             type=str
         )
@@ -162,7 +164,10 @@ class ChatGPTAPI(API):
             target_samples = samples[start_idx:end_idx]
             logging.debug(f"prompts length: {len(target_samples)}")
             prompts = "\nEND\n".join(target_samples)
-            prompts = prompts + "\n Above is a document. Paraphrase it while keeping its basic structure. Leave 'END' unchanged. Do not add any titles or numbers to each item."
+            prompts = f"{prompts}\n{self.variation_prompt}"
+            print(prompts)
+            import sys
+            sys.exit()
             messages = [
                     {"role": "user", "content": prompts}
                 ]
