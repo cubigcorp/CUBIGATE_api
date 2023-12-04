@@ -165,9 +165,6 @@ class ChatGPTAPI(API):
             logging.debug(f"prompts length: {len(target_samples)}")
             prompts = "\nEND\n".join(target_samples)
             prompts = f"{prompts}\n{self.variation_prompt}"
-            print(prompts)
-            import sys
-            sys.exit()
             messages = [
                     {"role": "user", "content": prompts}
                 ]
