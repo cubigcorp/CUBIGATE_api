@@ -8,6 +8,7 @@ from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
 import os
 import logging
+import time
 # from dpsda.pytorch_utils import dev
 
 
@@ -18,6 +19,7 @@ class ChatGPTAPI(API):
                  variation_batch_size,
                  api_key,
                  variation_prompt_path,
+                 control_prompt,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
@@ -30,6 +32,7 @@ class ChatGPTAPI(API):
         self._variation_api = variation_checkpoint
         with open(variation_prompt_path, 'r') as f:
             self.variation_prompt = f.read()
+        self.control_prompt = control_prompt
 
     @staticmethod
     def command_line_parser():
@@ -39,6 +42,11 @@ class ChatGPTAPI(API):
             '--api_key',
             type=str,
             required=True,
+            help='The path to the checkpoint for random sampling API')
+        parser.add_argument(
+            '--control_prompt',
+            type=str,
+            required=False,
             help='The path to the checkpoint for random sampling API')
         parser.add_argument(
             '--random_sampling_checkpoint',
@@ -91,7 +99,7 @@ class ChatGPTAPI(API):
 
                 prompt = prompt.replace('BATCH', f'{batch_size}')
                 messages = [
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt + self.control_prompt }
                 ]
 
                 response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
@@ -100,6 +108,9 @@ class ChatGPTAPI(API):
                 remain = batch_size - len(text)
                 while remain > 0 :
                     prompt = prompt.replace(f'{batch_size}', f'{remain}')
+                    messages = [
+                    {"role": "user", "content": prompt + self.control_prompt }
+                ]
                     response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
                     temp = [t.strip('\n') for t in response]
                     text = (text + [t for t in temp if t])[:batch_size]
@@ -131,7 +142,7 @@ class ChatGPTAPI(API):
         for iteration in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
-                prompts=list(additional_info),
+                additional_info=list(additional_info),
                 size=size,
                 variation_degree=variation_degree,
                 t=t)
@@ -145,7 +156,7 @@ class ChatGPTAPI(API):
                 )
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, prompts, size, variation_degree, t):
+    def _variation(self, samples, additional_info, size, variation_degree, t):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
@@ -164,7 +175,7 @@ class ChatGPTAPI(API):
             target_samples = samples[start_idx:end_idx]
             logging.debug(f"prompts length: {len(target_samples)}")
             prompts = "\nEND\n".join(target_samples)
-            prompts = f"{prompts}\n{self.variation_prompt}"
+            prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
             messages = [
                     {"role": "user", "content": prompts}
                 ]
@@ -186,13 +197,14 @@ class ChatGPTAPI(API):
         return variations
     
     @timeout(1000)
-    def _generate(self, model: str, messages: Dict, batch_size=1, stop: str=None, temperature: float=1):
+    def _generate(self, model: str, messages: Dict, batch_size=1, stop: str=None, temperature: float=1, sleep=10):
         response = openai.ChatCompletion.create(
                   model=model, 
                   messages=messages,
                   request_timeout = 1000,
                   stop=stop,
                   temperature=temperature)
+        time.sleep(sleep)
         # generated = response.choices[0].message.content.strip('END').split('END')
         # text = []
         # for temp in generated:
