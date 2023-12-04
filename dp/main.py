@@ -367,7 +367,7 @@ def main():
         log_fid(args.result_folder, fid, 0)
 
     T = len(args.num_samples_schedule)
-    epsilon = get_epsilon(args.epslion, T)
+    epsilon = get_epsilon(args.epsilon, T)
 
     for t in range(start_t, T):
         logging.info(f't={t}')
