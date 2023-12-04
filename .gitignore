@@ -13,3 +13,4 @@ logs
 *.zip
 *.pyc
 *.pt
+*.sh
