@@ -27,15 +27,18 @@
 
 * `apis/` 
   1. 사용할 API 클래스 정의 *!!*
-     1. 기존의 정의된 파일을 기반으로 `__init__()`에서 필요한 변수 정의 - `__init__()`이 인자로 받는 모든 변수는 `command_line_parser()`에서 정의된 argument여야 함.
-     2. `random_sampling()` 동작 방법 정의 - 내부 for문 위주로 변경하면 됨.
-     3. `variation()` 동작 방법 정의 - variation degree가 정의되지 않는 API의 경우 DPSDA 논문에 따라 variation degree를 정수로 설정하고 그 크기만큼 반복 호출하도록 정의하였음. 추후 논의 필요.
+     1. 기존의 정의된 파일을 기반으로 `__init__()`에서 필요한 변수 정의
+        * `__init__()`이 인자로 받는 모든 변수는 `command_line_parser()`에서 정의된 argument여야 함.
+     2. `random_sampling()` 동작 방법 정의
+         * 내부 for문 위주로 변경하면 됨.
+     3. `variation()` 동작 방법 정의
+        * variation degree가 정의되지 않는 API의 경우 DPSDA 논문에 따라 variation degree를 정수로 설정하고 그 크기만큼 반복 호출하도록 정의하였음. 추후 논의 필요.
 
 * `apis/__init__.py`
   1. `get_api_class_from_name`에서 사용할 API 클래스 개체를 반환해주는 조건문 추가 *!!* - `main.py`의 i번 항목에서 추가한 API 이름과 동일해야 함
 
 ## Sampling/variation 도중에 중단된 실험 재개하기
 1. `--save_samples_live` 추가하여 중간 결과물을 저장하도록 설정
-   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{iteration}_samples.npz`로 저장됨
+   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{lookahead}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
 2. `--live_loading_target`으로 불러올 중간 결과물의 경로 지정
    * 불러올 중간 결과물이 없다면 필요 없음 
