@@ -59,6 +59,11 @@ class ChatGPTAPI(API):
             type=int,
             default=10,
             help='The batch size for variation API')
+        parser.add_argument(
+            '--variation_prompt',
+            required=True,
+            type=str
+        )
         return parser
 
     def random_sampling(self, num_samples, prompts, size=None):

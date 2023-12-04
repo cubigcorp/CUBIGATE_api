@@ -15,11 +15,21 @@ from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples
 from dpsda.tokenizer import tokenize
+from dpsda.agm import get_epsilon
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--epsilon',
+        type=float,
+        required=False)
+    parser.add_argument(
+        '--delta',
+        default=0.0,
+        type=float,
+        required=False)
     parser.add_argument(
             '--device',
         type=int,
@@ -81,6 +91,7 @@ def parse_args():
         '--noise_multiplier',
         type=float,
         default=0.0,
+        required=False,
         help='Noise multiplier for DP NN histogram')    #noise_multiplier => how??
     parser.add_argument(
         '--lookahead_degree',
@@ -355,7 +366,10 @@ def main():
         logging.info(f'fid={fid}')
         log_fid(args.result_folder, fid, 0)
 
-    for t in range(start_t, len(args.num_samples_schedule)):
+    T = len(args.num_samples_schedule)
+    epsilon = get_epsilon(args.epslion, T)
+
+    for t in range(start_t, T):
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
@@ -404,6 +418,8 @@ def main():
                     num_samples_per_class * (class_i + 1)],
                 private_features=all_private_features[
                     all_private_labels == class_],
+                epsilon=epsilon,
+                delta=args.delta,
                 noise_multiplier=args.noise_multiplier,
                 num_nearest_neighbor=args.num_nearest_neighbor,
                 mode=args.nn_mode,

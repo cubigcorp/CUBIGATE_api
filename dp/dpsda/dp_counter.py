@@ -3,10 +3,11 @@ import logging
 import numpy as np
 from collections import Counter
 import torch
+from dpsda.agm import get_sigma
 
 
-def dp_nn_histogram(public_features, private_features, noise_multiplier,
-                    num_packing=1, num_nearest_neighbor=1, mode='L2',
+def dp_nn_histogram(public_features, private_features, epsilon: float, delta: float, 
+                    noise_multiplier, num_packing=1, num_nearest_neighbor=1, mode='L2',
                     threshold=0.0, t=None, result_folder: str=None):
     np.set_printoptions(100)
     assert public_features.shape[0] % num_packing == 0
@@ -39,8 +40,13 @@ def dp_nn_histogram(public_features, private_features, noise_multiplier,
     logging.info(f'Largest clean counters: {sorted(count)[::-1][:50]}')
     count = np.asarray(count)
     clean_count = count.copy()
-    count += (np.random.normal(size=len(count)) * np.sqrt(num_nearest_neighbor)
-              * noise_multiplier)
+    if epsilon and delta:
+        sigma = get_sigma(epsilon=epsilon, delta=delta, GS=1)
+        logging.info(f'calculated sigma: {sigma}')
+        count += (np.random.normal(scale=sigma, size=len(count))) * np.sqrt(num_nearest_neighbor)
+    else:
+        count += (np.random.normal(size=len(count)) * np.sqrt(num_nearest_neighbor)
+                * noise_multiplier)
     logging.info(f'Noisy count sum: {np.sum(count)}')
     logging.info(f'Noisy count num>0: {np.sum(count > 0)}')
     logging.info(f'Largest noisy counters: {sorted(count)[::-1][:50]}')
