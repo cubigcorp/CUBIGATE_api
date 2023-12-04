@@ -369,8 +369,8 @@ def main():
     T = len(args.num_samples_schedule)
     if args.epsilon:
         total_epsilon = get_epsilon(args.epsilon, T)
-        logging.info(f"Expected total epsilon: {total_epsilon}")
-        logging.info(f"Expected rivacy cost per t: {args.epsilon}")
+        logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
+        logging.info(f"Expected privacy cost per t: {args.epsilon:.2f}")
     for t in range(start_t, T):
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
@@ -420,7 +420,7 @@ def main():
                     num_samples_per_class * (class_i + 1)],
                 private_features=all_private_features[
                     all_private_labels == class_],
-                epsilon=epsilon,
+                epsilon=args.epsilon,
                 delta=args.delta,
                 noise_multiplier=args.noise_multiplier,
                 num_nearest_neighbor=args.num_nearest_neighbor,
@@ -501,7 +501,7 @@ def main():
             folder=f'{args.result_folder}/{t}',
             plot_samples=args.plot_images,
             modality=args.modality)
-        logging.info(f"Privacy cost so far: {get_epsilon(args.epsilon, t)}")
+        logging.info(f"Privacy cost so far: {get_epsilon(args.epsilon, t):.2f}")
 
 
 if __name__ == '__main__':
