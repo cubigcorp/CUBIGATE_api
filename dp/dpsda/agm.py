@@ -1,16 +1,13 @@
 from math import exp, sqrt
 from scipy.special import erf
 
-def get_epsilon(total_epsilon: float, T: int) -> float:
+def get_epsilon(epsilon: float, T: int) -> float:
     """
     https://arxiv.org/abs/1905.02383
     """
-    if total_epsilon is None:
-        return None
-    eps = total_epsilon ** 2
-    eps /= sqrt(T)
-    eps = sqrt(T)
-    return eps
+    eps = epsilon ** 2
+    total_epsilon = sqrt(eps * T)
+    return total_epsilon
 
 def get_sigma(epsilon, delta, GS, tol = 1.e-12):
     """ Calibrate a Gaussian perturbation for differential privacy using the analytic Gaussian mechanism of [Balle and Wang, ICML'18]

@@ -367,8 +367,10 @@ def main():
         log_fid(args.result_folder, fid, 0)
 
     T = len(args.num_samples_schedule)
-    epsilon = get_epsilon(args.epsilon, T)
-
+    if args.epsilon:
+        total_epsilon = get_epsilon(args.epsilon, T)
+        logging.info(f"Expected total epsilon: {total_epsilon}")
+        logging.info(f"Expected rivacy cost per t: {args.epsilon}")
     for t in range(start_t, T):
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
@@ -499,6 +501,7 @@ def main():
             folder=f'{args.result_folder}/{t}',
             plot_samples=args.plot_images,
             modality=args.modality)
+        logging.info(f"Privacy cost so far: {get_epsilon(args.epsilon, t)}")
 
 
 if __name__ == '__main__':
