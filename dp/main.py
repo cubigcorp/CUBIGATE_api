@@ -367,7 +367,7 @@ def main():
         log_fid(args.result_folder, fid, 0)
 
     T = len(args.num_samples_schedule)
-    if args.epsilon:
+    if args.epsilon is not None:
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
         logging.info(f"Expected privacy cost per t: {args.epsilon:.2f}")

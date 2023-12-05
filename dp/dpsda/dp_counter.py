@@ -40,7 +40,7 @@ def dp_nn_histogram(public_features, private_features, epsilon: float, delta: fl
     logging.info(f'Largest clean counters: {sorted(count)[::-1][:50]}')
     count = np.asarray(count)
     clean_count = count.copy()
-    if epsilon and delta:
+    if epsilon is not None:
         sigma = get_sigma(epsilon=epsilon, delta=delta, GS=1)
         logging.info(f'calculated sigma: {sigma}')
         count += (np.random.normal(scale=sigma, size=len(count))) * np.sqrt(num_nearest_neighbor)
