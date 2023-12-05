@@ -1,0 +1,14 @@
+python cubig_gen_dp_infer.py \
+--api stable_diffusion \
+--data_checkpoint_path dp/result/chest/normal/lora/17/samples.npz \
+--device 3 \
+--image_size 512x512 \
+--num_samples 50 \
+--api_device 3 \
+--random_sampling_checkpoint runwayml/stable-diffusion-v1-5 \
+--variation_checkpoint runwayml/stable-diffusion-v1-5 \
+--lora lora/chest \
+--suffix chest_normal \
+--data_dir dp/data/chest/train/NORMAL \
+--result_folder dp_data \
+--prefix NORMAL

@@ -1,0 +1,4 @@
+Above is a document generated using 'PROMPT' as a prompt. Make a variation of it. In doing so, you must follow the restrictions below:
+1. No summarization.
+2. If it has a certain form of writing, then it has to remain in that exact form.
+3. Other than that, utilize maximum range of freedom to variate the document.

@@ -24,7 +24,8 @@ class ChatGPTAPI(API):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
         self._random_sampling_batch_size = random_sampling_batch_size
-        openai.api_key = api_key
+        with open(api_key, 'r') as f:
+            openai.api_key = f.read()
 
         self._variation_checkpoint = variation_checkpoint
         self._variation_batch_size = variation_batch_size
