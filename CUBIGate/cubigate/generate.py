@@ -94,9 +94,34 @@ class CubigDPGenerator():
         ----------
         data_checkpoint_path:
             Path to the data checkpoint
+        data_checkpoint_step:
+            Iteration of the data checkpoint
+        initial_prompt:
+            Initial prompt for image generation. It can be specified
+            multiple times to provide a list of prompts. If the API accepts
+            prompts, the initial samples will be generated with these prompts
+        num_samples_schedule:
+            Number of samples to generate at each iteration
+        variation_degree_schedule:
+            Variation degree at each iteration
+        lookahead_degree:
+            Lookahead degree for computing distances between private and generated images
+        img_size:
+            Target size of image to generate
+        epsilon:
+            Privacy parameter, for each step of variations
+        delta:
+            Privacy parameter
+        count_threshold:
+            Threshold for DP NN histogram
+        plot_images:
+            Whether to save generated images in PNG files
+        nn_mode:
+            Which distance metric to use in DP NN histogram
+            
         """
         # 1. Set up API instance
-        api = self.api_class.from_command_line_args(**api_args)
+        self.api = self.api_class.from_command_line_args(**api_args)
 
         # 2. Load original data
         all_private_samples, all_private_labels = load_data(
@@ -132,7 +157,7 @@ class CubigDPGenerator():
         # 4-b. Generate initial population
         else:
             logging.info('Generating initial samples')
-            samples, additional_info = api.random_sampling(
+            samples, additional_info = self.api.random_sampling(
                 prompts=initial_prompt,
                 num_samples=num_samples_schedule[0],
                 size=img_size)
@@ -164,7 +189,7 @@ class CubigDPGenerator():
                 packed_samples = np.expand_dims(samples, axis=1)
             else:  # 7-b. Sample is needed As many as lookahead degree
                 logging.info('Running image variation')
-                packed_samples = api.variation(
+                packed_samples = self.api.variation(
                     samples=samples,
                     additional_info=additional_info,
                     num_variations_per_sample=lookahead_degree,
@@ -243,12 +268,12 @@ class CubigDPGenerator():
 
             # 10. Generate next generation
             logging.info('Generating new samples')
-            new_new_samples = api.variation(
+            new_new_samples = self.api.variation(
                 samples=new_samples,
                 additional_info=new_additional_info,
                 num_variations_per_sample=1,
-                size=args.image_size,
-                variation_degree=args.variation_degree_schedule[t],
+                size=img_size,
+                variation_degree=variation_degree_schedule[t],
                 t=t)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
@@ -267,8 +292,52 @@ class CubigDPGenerator():
     def generate(
         self,
         base_data: str,
-        image_size: str,
+        img_size: str,
         num_samples: int,
-        suffix: str
+        variation_degree: float,
+        plot_images: bool,
+        **api_args
     ):
-        pass
+        """
+        Generate images based on the distribution learned
+
+        Parameters
+        ----------
+        base_data:
+            Set of generated data as the learned distribution
+        img_size:
+            Target size of image to generate
+        num_samples:
+            Number of samples to generate
+        variation_degree:
+            Variation degree
+        plot_images:
+            Whether to save generated images in PNG files
+        """
+        # 1. Make sure it has API instance
+        if not hasattr(self, 'api'):
+            self.api = self.api_class.from_command_line_args(**api_args)
+
+        # 2. Load base data
+        samples, additional_info = load_samples(base_data)
+
+        # Generate samples as variations of base data
+        assert num_samples % len(samples) == 0
+        variation_per_image = num_samples // len(samples)
+        width = int(img_size.split('x')[0])
+        height = int(img_size.split('x')[1])
+        for i, sample in enumerate(samples):
+            for v in range(variation_per_image):
+                sample = sample.reshape(1, width, height, -1)
+                prompt = additional_info[i].reshape(1)
+                sample = self.api.variation(
+                    samples=sample,
+                    additional_info=prompt,
+                    num_variations_per_sample=1,
+                    size=img_size,
+                    variation_degree=variation_degree)
+                log_samples(
+                    samples=samples,
+                    additional_info=additional_info,
+                    folder=f'{self.result_folder}/gen',
+                    plot_samples=plot_images)
