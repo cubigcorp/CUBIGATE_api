@@ -7,7 +7,7 @@ from diffusers import StableDiffusionPipeline
 from diffusers import StableDiffusionImg2ImgPipeline
 
 from .api import API
-# from dpsda.pytorch_utils import dev
+from dpsda.pytorch_utils import dev
 
 
 def _round_to_uint8(image):
@@ -23,7 +23,6 @@ class StableDiffusionAPI(API):
                  variation_guidance_scale,
                  variation_num_inference_steps,
                  variation_batch_size,
-                 api_device,
                  lora,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,14 +31,12 @@ class StableDiffusionAPI(API):
         self._random_sampling_num_inference_steps = \
             random_sampling_num_inference_steps
         self._random_sampling_batch_size = random_sampling_batch_size
-        self.device = f'cuda:{api_device}'
         self._random_sampling_pipe = StableDiffusionPipeline.from_pretrained(
             self._random_sampling_checkpoint, torch_dtype=torch.float16)
         if lora is not None:
             self._random_sampling_pipe.unet.load_attn_procs(lora)
         self._random_sampling_pipe.safety_checker = None
-       # self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
-        self._random_sampling_pipe = self._random_sampling_pipe.to(self.device)
+        self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
 
         self._variation_checkpoint = variation_checkpoint
         self._variation_guidance_scale = variation_guidance_scale
@@ -53,8 +50,7 @@ class StableDiffusionAPI(API):
         self._variation_pipe.safety_checker = None
         if lora is not None:
             self._variation_pipe.unet.load_attn_procs(lora)
-        self._variation_pipe = self._variation_pipe.to(self.device)
-        #self._variation_pipe = self._variation_pipe.to(dev())
+        self._variation_pipe = self._variation_pipe.to(dev())
 
     @staticmethod
     def command_line_parser():
@@ -66,11 +62,6 @@ class StableDiffusionAPI(API):
             required=False,
             help="LoRA"
         )
-        parser.add_argument(
-            '--api_device',
-            type=int,
-            required=True,
-            help='The path to the checkpoint for random sampling API')
         parser.add_argument(
             '--random_sampling_checkpoint',
             type=str,

@@ -15,7 +15,6 @@ class CubigDPGenerator():
     def __init__(
         self, 
         api: str,
-        model_checkpoint: str,
         feature_extractor: str,
         result_folder: str,
         tmp_folder: str,
