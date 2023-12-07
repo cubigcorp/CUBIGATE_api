@@ -2,14 +2,14 @@ import argparse
 import logging
 import os
 import numpy as np
-#import imageio
-#from torchvision.utils import make_grid
+import imageio
+from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_data, load_samples
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
-from dpsda.metrics import compute_fid
+from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
@@ -290,6 +290,7 @@ def main():
     setup_logging(os.path.join(args.result_folder, 'log.log'))
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
+    metric = "FID" if args.num_private_samples > 2048 else "KID"
 
     all_private_samples, all_private_labels = load_data(
         data_dir=args.data_folder,
@@ -317,7 +318,7 @@ def main():
     logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
     if args.make_fid_stats:
-        logging.info('Computing FID stats')
+        logging.info(f'Computing {metric} stats')
         make_fid_stats(
             samples=all_private_samples,
             dataset=args.fid_dataset_name,
@@ -325,7 +326,10 @@ def main():
             dataset_split=args.fid_dataset_split,
             tmp_folder=args.tmp_folder,
             model_name=args.fid_model_name,
-            batch_size=args.fid_batch_size)
+            batch_size=args.fid_batch_size,
+            modality=args.modality,
+            device=f'cuda:{args.device}',
+            metric=metric)
 
     # Generating initial samples.
     if args.data_checkpoint_path != '':
@@ -353,16 +357,25 @@ def main():
         start_t = 1
 
     if args.compute_fid:
-        logging.info('Computing FID')
-        fid = compute_fid(
-            samples=samples,
+        logging.info(f'Computing {metric}')
+        if args.modality == 'text':
+                tokens = [tokenize(args.fid_model_name, sample) for sample in samples]
+                tokens = np.array(tokens)
+        else:
+            tokens = samples
+
+        fid = compute_metric(
+            samples=tokens,
             tmp_folder=args.tmp_folder,
             num_fid_samples=args.num_fid_samples,
             dataset_res=args.private_image_size,
             dataset=args.fid_dataset_name,
             dataset_split=args.fid_dataset_split,
             model_name=args.fid_model_name,
-            batch_size=args.fid_batch_size)
+            batch_size=args.fid_batch_size,
+            modality=args.modality,
+            device=f'cuda:{args.device}',
+            metric=metric)
         logging.info(f'fid={fid}')
         log_fid(args.result_folder, fid, 0)
 
@@ -479,16 +492,24 @@ def main():
         new_new_additional_info = new_additional_info
 
         if args.compute_fid:
-            logging.info('Computing FID')
-            new_new_fid = compute_fid(
-                new_new_samples,
+            logging.info(f'Computing {metric}')
+            if args.modality == 'text':
+                new_new_tokens = [tokenize(args.fid_model_name, sample) for sample in new_new_samples]
+                new_new_tokens = np.array(new_new_tokens)
+            else:
+                new_new_tokens = new_new_samples
+            new_new_fid = compute_metric(
+                new_new_tokens,
                 tmp_folder=args.tmp_folder,
                 num_fid_samples=args.num_fid_samples,
                 dataset_res=args.private_image_size,
                 dataset=args.fid_dataset_name,
                 dataset_split=args.fid_dataset_split,
                 model_name=args.fid_model_name,
-                batch_size=args.fid_batch_size)
+                batch_size=args.fid_batch_size,
+                modality=args.modality,
+                device=f'cuda:{args.device}',
+                metric=metric)
             logging.info(f'fid={new_new_fid}')
             log_fid(args.result_folder, new_new_fid, t)
 

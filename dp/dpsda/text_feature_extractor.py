@@ -1,12 +1,39 @@
 import torch
 import clip
 from cleanfid.fid import get_batch_features
+from dpsda.dataset import ResizeDataset, EXTENSIONS
 import zipfile
+from glob import glob
+import os
 import numpy as np
 from tqdm import tqdm
+import random
 import clip
 from sentence_transformers import SentenceTransformer
 
+def get_folder_features(fdir, modality: str, model=None, num_workers=12, num=None,
+                        shuffle=False, seed=0, batch_size=128, device=torch.device("cuda"),
+                        description="", verbose=True):
+    # get all relevant files in the dataset
+    if ".zip" in fdir:
+        files = list(set(zipfile.ZipFile(fdir).namelist()))
+        # remove the non-image files inside the zip
+        files = [x for x in files if os.path.splitext(x)[1].lower()[1:] in EXTENSIONS[modality]]
+    else:
+        files = sorted([file for ext in EXTENSIONS[modality]
+                    for file in glob(os.path.join(fdir, f"**/*.{ext}"), recursive=True)])
+    if verbose:
+        print(f"Found {len(files)} {modality}s in the folder {fdir}")
+    # use a subset number of files if needed
+    if num is not None:
+        if shuffle:
+            random.seed(seed)
+            random.shuffle(files)
+        files = files[:num]
+    np_feats = get_files_features(files, model, num_workers=num_workers,
+                                  batch_size=batch_size, device=device,
+                                  description=description, fdir=fdir, verbose=verbose)
+    return np_feats
 
 def get_files_features(l_files, model=None, num_workers=12,
                        batch_size=128, device=torch.device("cuda"),
@@ -36,7 +63,6 @@ class CLIP_fx_txt():
     def __init__(self, name="ViT-B/32", device="cuda"):
         self.model, _ = clip.load(name, device=device)
         self.model.eval()
-        self.name = "clip_"+name.lower().replace("-","_").replace("/","_")
     
     def __call__(self, txt):
 
@@ -57,40 +83,3 @@ class BERT_fx_txt():
         return z
 
 
-class ResizeDataset(torch.utils.data.Dataset):
-    """
-    A placeholder Dataset that enables parallelizing the resize operation
-    using multiple CPU cores
-
-    files: list of all files in the folder
-    fn_resize: function that takes an np_array as input [0,255]
-    """
-
-    def __init__(self, files, fdir=None):
-        self.files = files
-        self.fdir = fdir
-        self._zipfile = None
-
-    def _get_zipfile(self):
-        assert self.fdir is not None and '.zip' in self.fdir
-        if self._zipfile is None:
-            self._zipfile = zipfile.ZipFile(self.fdir)
-        return self._zipfile
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, i):
-        path = str(self.files[i])
-        if self.fdir is not None and '.zip' in self.fdir:
-            with self._get_zipfile().open(path, 'r') as f:
-                txt_str = f.read()
-        elif ".npy" in path:
-            txt_str = np.load(path)
-        else:
-            with open(path, 'r') as f:
-                txt_str = f.read()
-        txt_str = txt_str.split(',')
-        txt_np = np.array(txt_str, dtype=np.int32)
-
-        return txt_np
