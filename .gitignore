@@ -18,5 +18,7 @@ logs
 *.pyc
 *.pt
 *.key
-*.npz
+result/**/*.npz
+dp/result/**/*.npz
+CUBIGate/result/**/*_debug.npz
 *.log

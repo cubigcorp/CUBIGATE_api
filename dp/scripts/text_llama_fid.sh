@@ -1,28 +1,19 @@
-python main.py \
+python FID.py \
 --device 2 \
 --modality text \
 --feature_extractor clip_vit_b_32 \
---compute_fid true \
---make_fid_stats true \
---num_fid_samples 10 \
 --fid_model_name clip_vit_b_32 \
---count_threshold 2.0 \
---noise_multiplier 1.0 \
---lookahead_degree 2 \
 --data_folder /home/minsy/CUBIG/dp/data/clinical/train \
---num_samples_schedule 10,10 \
---variation_degree_schedule 1.0,0.98 \
---num_private_samples 10 \
+--num_private_samples 100 \
+--num_fid_samples 100 \
 --initial_prompt "Generate a dialog between a doctor and a patient" \
 --result_folder /home/minsy/CUBIG/dp/result/clinical/test \
 --tmp_folder /tmp/clinical/test \
---api llama2 \
---random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
---random_sampling_batch_size 4 \
---variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
 --variation_batch_size 1 \
 --max_seq_len 512 \
 --top_k 10 \
 --api_device 2 \
 --epsilon 1.0 \
---delta 0.0
+--delta 0.0 \
+--data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/17/_samples.npz \
+--data_checkpoint_step 17
