@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from cleanfid.resize import make_resizer
-from dp.utils.round import round_to_uint8
+from cubigate.dp.utils.round import round_to_uint8
 
 
 

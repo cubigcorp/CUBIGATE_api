@@ -22,7 +22,7 @@ class ImageDataset(Dataset):
         self.folder = folder
         self.transform = transform
         
-        self.local_images = _list_files_recursively(folder, 'image')
+        self.local_images = _list_files_recursively(folder)
         class_names = [bf.basename(path).split('_')[0]
                        for path in self.local_images]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}

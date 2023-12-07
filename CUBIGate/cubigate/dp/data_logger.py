@@ -2,8 +2,10 @@ import os
 import imageio
 from torchvision.utils import make_grid
 import numpy as np
+import torch
+from cubigate.dp.utils.round import round_to_uint8
 
-def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, save_npz=True, additional_info=None, prefix: str=''):
+def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, additional_info=None, prefix: str=''):
     if not os.path.exists(folder):
         os.makedirs(folder)
     if save_npz:
@@ -13,13 +15,7 @@ def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, sa
             additional_info=additional_info)
     if plot_samples:
         for i in range(samples.shape[0]):
-            if modality == 'image':
-                imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
-            elif modality == 'text':
-                with open(os.path.join(folder, f"{prefix}_{i}.txt"), 'w', encoding='utf-8') as f:
-                    f.write(samples[i])
-            else:
-                raise Exception(f'Unknown modality {modality}')
+            imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
 
 
 def log_count(count, clean_count, path):

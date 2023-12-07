@@ -4,21 +4,19 @@ from torch.utils.data import DataLoader
 import numpy as np
 import logging
 
-from .dataset import ImageDataset, TextDataset
+from .dataset import ImageDataset
 
 
 def load_data(data_dir, batch_size, image_size, class_cond,
-              num_private_samples, modality: str, model=None):
+              num_private_samples):
 
-    if modality == 'image':
-        transform = T.Compose([
-            T.Resize(image_size),
-            T.CenterCrop(image_size),
-            T.ToTensor()
-        ])
-        dataset = ImageDataset(folder=data_dir, transform=transform)
-    elif modality == 'text':
-        dataset = TextDataset(folder=data_dir, model=model)
+    transform = T.Compose([
+        T.Resize(image_size),
+        T.CenterCrop(image_size),
+        T.ToTensor()
+    ])
+    dataset = ImageDataset(folder=data_dir, transform=transform)
+
 
     loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=10,
                         pin_memory=torch.cuda.is_available(), drop_last=False)
@@ -41,12 +39,11 @@ def load_data(data_dir, batch_size, image_size, class_cond,
             break
     all_samples = np.concatenate(all_samples, axis=0)
     all_samples = all_samples[:num_private_samples]
-    if modality == 'image':
-        all_samples = np.around(np.clip(
-            all_samples * 255, a_min=0, a_max=255)).astype(np.uint8)
-        all_samples = np.transpose(all_samples, (0, 2, 3, 1))
-    elif modality == 'text':
-        all_samples = all_samples.astype(np.int32)
+
+    all_samples = np.around(np.clip(
+        all_samples * 255, a_min=0, a_max=255)).astype(np.uint8)
+    all_samples = np.transpose(all_samples, (0, 2, 3, 1))
+    
     if class_cond:
         all_labels = np.concatenate(all_labels, axis=0)
         all_labels = all_labels[:num_private_samples]

@@ -6,6 +6,16 @@ import os
 def argument():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        '--train',
+        action='store_true',
+        help="Whether to train generator to learn the distribution before generating samples."
+    )
+    parser.add_argument(
+        '--generate',
+        action='store_true',
+        help="Whether to generate new samples after train the generator"
+    )
+    parser.add_argument(
         '--epsilon',
         type=float,
         required=False)
@@ -132,6 +142,12 @@ def argument():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, api_args = parser.parse_known_args()
+    args.num_samples_schedule = list(map(
+        int, args.num_samples_schedule.split(',')))
+    variation_degree_type = (float if '.' in args.variation_degree_schedule
+                             else int)
+    args.variation_degree_schedule = list(map(
+        variation_degree_type, args.variation_degree_schedule.split(',')))
     assert len(args.num_samples_schedule) == len(args.variation_degree_schedule)
     return args, api_args
 
@@ -148,30 +164,33 @@ def main():
         conditional=args.conditional,
         num_org_data=args.num_org_data
     )
-    generator.train(
-        data_checkpoint_path=args.data_checkpoint_path,
-        data_checkpoint_step=args.data_checkpoint_step,
-        initial_prompt=args.initial_prompt,
-        num_samples_schedule=args.num_samples_schedule,
-        variation_degree_schedule=args.variation_degree_schedule,
-        lookahead_degree=args.lookahead_degree,
-        img_size=args.img_size,
-        epsilon=args.epsilon,
-        delta=args.delta,
-        count_threshold=args.count_threshold,
-        plot_images=args.plot_images,
-        nn_mode=args.nn_mode,
-        api_args=api_args
-    )
-    args.data_checkpoint_path = os.path.join(args.result_folder, len(args.variation_degree_schedule), '_samples.npz')
-    generator.generate(
-        base_data=args.data_checkpoint_path,
-        img_size=args.img_size,
-        num_samples=args.num_samples,
-        variation_degree=args.variation_degree,
-        plot_images=args.plot_images,
-        api_args=api_args
-    )
+    if args.train:
+        generator.train(
+            data_folder=args.data_folder,
+            data_checkpoint_path=args.data_checkpoint_path,
+            data_checkpoint_step=args.data_checkpoint_step,
+            initial_prompt=args.initial_prompt,
+            num_samples_schedule=args.num_samples_schedule,
+            variation_degree_schedule=args.variation_degree_schedule,
+            lookahead_degree=args.lookahead_degree,
+            img_size=args.img_size,
+            epsilon=args.epsilon,
+            delta=args.delta,
+            count_threshold=args.count_threshold,
+            plot_images=args.plot_images,
+            nn_mode=args.nn_mode,
+            api_args=api_args
+        )
+    args.data_checkpoint_path = os.path.join(args.result_folder, str(len(args.variation_degree_schedule) - 1), '_samples.npz')
+    if args.generate:
+        generator.generate(
+            base_data=args.data_checkpoint_path,
+            img_size=args.img_size,
+            num_samples=args.num_samples,
+            variation_degree=args.variation_degree,
+            plot_images=args.plot_images,
+            api_args=api_args
+        )
 
 if __name__ == '__main__':
     main()

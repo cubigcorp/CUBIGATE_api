@@ -9,18 +9,11 @@ def get_api_class_from_name(name):
     elif name == 'stable_diffusion':
         from .stable_diffusion_api import StableDiffusionAPI
         return StableDiffusionAPI
+
     elif name == 'improved_diffusion':
         from .improved_diffusion_api import ImprovedDiffusionAPI
+
         return ImprovedDiffusionAPI
-    elif name == 'gpt2':
-        from .gpt2_api import GPT2API
-        return GPT2API
-    elif name == 'chatgpt':
-        from .chat_gpt_api import ChatGPTAPI
-        return ChatGPTAPI
-    elif name == 'llama2':
-        from .llama_api import Llama2API
-        return Llama2API
     else:
         raise ValueError(f'Unknown API name {name}')
 

@@ -7,7 +7,7 @@ from diffusers import StableDiffusionPipeline
 from diffusers import StableDiffusionImg2ImgPipeline
 
 from .api import API
-from dp.utils.pytorch_utils import dev
+from cubigate.dp.utils.pytorch_utils import dev
 
 
 def _round_to_uint8(image):
@@ -95,7 +95,7 @@ class StableDiffusionAPI(API):
             help='The batch size for variation API')
         return parser
 
-    def image_random_sampling(self, num_samples, size, prompts):
+    def random_sampling(self, num_samples, size, prompts):
         """
         Generates a specified number of random image samples based on a given
         prompt and size using OpenAI's Image API.
@@ -144,8 +144,8 @@ class StableDiffusionAPI(API):
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(images, axis=0), np.array(return_prompts)
 
-    def image_variation(self, images, additional_info,
-                        num_variations_per_image, size, variation_degree):
+    def variation(self, samples, additional_info,
+                        num_variations_per_sample, size, variation_degree):
         """
         Generates a specified number of variations for each image in the input
         array using OpenAI's Image Variation API.
@@ -178,16 +178,16 @@ class StableDiffusionAPI(API):
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
-        for _ in tqdm(range(num_variations_per_image)):
-            sub_variations = self._image_variation(
-                images=images,
+        for _ in tqdm(range(num_variations_per_sample)):
+            sub_variations = self._variation(
+                samples=samples,
                 prompts=list(additional_info),
                 size=size,
                 variation_degree=variation_degree)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _image_variation(self, images, prompts, size, variation_degree):
+    def _variation(self, samples, prompts, size, variation_degree):
         width, height = list(map(int, size.split('x')))
         variation_transform = T.Compose([
             T.Resize(
@@ -197,18 +197,18 @@ class StableDiffusionAPI(API):
             T.Normalize(
                 [0.5, 0.5, 0.5],
                 [0.5, 0.5, 0.5])])
-        images = [variation_transform(Image.fromarray(im))
-                  for im in images]
-        images = torch.stack(images).to(dev())
+        samples = [variation_transform(Image.fromarray(im))
+                  for im in samples]
+        samples = torch.stack(samples).to(dev())
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
-            float(images.shape[0]) / max_batch_size))
+            float(samples.shape[0]) / max_batch_size))
         for iteration in tqdm(range(num_iterations), leave=False):
             variations.append(self._variation_pipe(
                 prompt=prompts[iteration * max_batch_size:
                                (iteration + 1) * max_batch_size],
-                image=images[iteration * max_batch_size:
+                image=samples[iteration * max_batch_size:
                              (iteration + 1) * max_batch_size],
                 num_inference_steps=self._variation_num_inference_steps,
                 strength=variation_degree,

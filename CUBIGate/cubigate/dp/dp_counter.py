@@ -3,11 +3,12 @@ import logging
 import numpy as np
 from collections import Counter
 import torch
-from agm import get_sigma
+from cubigate.dp.agm import get_sigma
+from typing import Optional
 
 
 def dp_nn_histogram(public_features, private_features, epsilon: float, delta: float, 
-                    noise_multiplier, num_packing=1, num_nearest_neighbor=1, mode='L2',
+                    noise_multiplier=0.0, num_packing=1, num_nearest_neighbor=1, mode='L2',
                     threshold=0.0, t=None, result_folder: str=None):
     np.set_printoptions(100)
     assert public_features.shape[0] % num_packing == 0

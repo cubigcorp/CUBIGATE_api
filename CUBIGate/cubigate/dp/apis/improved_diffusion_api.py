@@ -4,11 +4,11 @@ from tqdm import tqdm
 import logging
 
 from .api import API
-from dpsda.arg_utils import str2bool
+from cubigate.dp.utils.arg_utils import str2bool
 
 from .improved_diffusion.unet import create_model
-from improved_diffusion import dist_util
-from improved_diffusion.script_util import NUM_CLASSES
+from .improved_diffusion import dist_util
+from .improved_diffusion.script_util import NUM_CLASSES
 from .improved_diffusion.gaussian_diffusion import create_gaussian_diffusion
 
 

@@ -1,15 +1,14 @@
 import logging
 import os
 import numpy as np
-import torch
 from typing import Optional, List
-from dp.utils.logging import setup_logging
-from dp.data_loader import load_data, load_samples
-from dp.extractors.feature_extractor import extract_features
-from dp.dp_counter import dp_nn_histogram
-from dp.apis import get_api_class_from_name
-from dp.data_logger import log_samples, log_count, visualize
-from dp.agm import get_epsilon
+from cubigate.dp.utils.logging import setup_logging
+from cubigate.dp.data_loader import load_data, load_samples
+from cubigate.dp.extractors.feature_extractor import extract_features
+from cubigate.dp.dp_counter import dp_nn_histogram
+from cubigate.dp.apis import get_api_class_from_name
+from cubigate.dp.data_logger import log_samples, log_count, visualize
+from cubigate.dp.agm import get_epsilon
 
 class CubigDPGenerator():
     def __init__(
@@ -18,7 +17,6 @@ class CubigDPGenerator():
         feature_extractor: str,
         result_folder: str,
         tmp_folder: str,
-        data_folder: str,
         data_loading_batch_size: int,
         feature_extractor_batch_size: int,
         org_img_size: int,
@@ -36,8 +34,6 @@ class CubigDPGenerator():
             Folder for storing results
         tmp_folder:
             Temporary folder for storing intermediate results
-        data_folder:
-            Folder for original data
         data_loading_batch_size:
             Batch size for loading the original data
         feature_extractor_batch_size:
@@ -61,7 +57,6 @@ class CubigDPGenerator():
         # 0-c. Declare class variables
         self.api_class = get_api_class_from_name(api)  # Name of the foundation model API
         self.result_folder = result_folder
-        self.data_folder = data_folder
         self.data_loading_batch_size = data_loading_batch_size
         self.org_img_size = org_img_size
         self.conditional = conditional
@@ -73,6 +68,8 @@ class CubigDPGenerator():
 
     def train(
         self,
+        api_args,
+        data_folder: str,
         data_checkpoint_path: Optional[str],
         data_checkpoint_step: Optional[int],
         initial_prompt: Optional[str],
@@ -84,13 +81,16 @@ class CubigDPGenerator():
         delta: float,
         count_threshold: int,
         plot_images: bool=False,
-        nn_mode: str='L2',
-        **api_args):
+        nn_mode: str='L2'):
         """
         Learn the distribution
 
         Parameters
         ----------
+        api_args:
+            Arguments for API
+        data_folder:
+            Folder of the original data
         data_checkpoint_path:
             Path to the data checkpoint
         data_checkpoint_step:
@@ -120,16 +120,15 @@ class CubigDPGenerator():
             
         """
         # 1. Set up API instance
-        self.api = self.api_class.from_command_line_args(**api_args)
+        self.api = self.api_class.from_command_line_args(api_args)
 
         # 2. Load original data
         all_private_samples, all_private_labels = load_data(
-            data_dir=self.data_folder,
+            data_dir=data_folder,
             batch_size=self.data_loading_batch_size,
             image_size=self.org_img_size,
             class_cond=self.conditional,
-            num_private_samples=self.num_org_data,
-            model=self.feature_extractor)
+            num_private_samples=self.num_org_data)
 
         private_classes = list(sorted(set(list(all_private_labels))))
         private_num_classes = len(private_classes)
@@ -223,7 +222,8 @@ class CubigDPGenerator():
                     delta=delta,
                     mode=nn_mode,
                     threshold=count_threshold,
-                    result_folder=self.result_folder)
+                    result_folder=self.result_folder,
+                    t=t)
                 log_count(
                     sub_count,
                     sub_clean_count,
@@ -272,8 +272,7 @@ class CubigDPGenerator():
                 additional_info=new_additional_info,
                 num_variations_per_sample=1,
                 size=img_size,
-                variation_degree=variation_degree_schedule[t],
-                t=t)
+                variation_degree=variation_degree_schedule[t])
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 
@@ -295,7 +294,7 @@ class CubigDPGenerator():
         num_samples: int,
         variation_degree: float,
         plot_images: bool,
-        **api_args
+        api_args
     ):
         """
         Generate images based on the distribution learned
@@ -315,28 +314,28 @@ class CubigDPGenerator():
         """
         # 1. Make sure it has API instance
         if not hasattr(self, 'api'):
-            self.api = self.api_class.from_command_line_args(**api_args)
+            self.api = self.api_class.from_command_line_args(api_args)
 
         # 2. Load base data
         samples, additional_info = load_samples(base_data)
 
         # Generate samples as variations of base data
-        assert num_samples % len(samples) == 0
-        variation_per_image = num_samples // len(samples)
+        if num_samples != len(samples):
+            target_idx = np.random.choice(len(samples), num_samples, replace=True)
+        target_samples = samples[target_idx]
         width = int(img_size.split('x')[0])
         height = int(img_size.split('x')[1])
-        for i, sample in enumerate(samples):
-            for v in range(variation_per_image):
-                sample = sample.reshape(1, width, height, -1)
-                prompt = additional_info[i].reshape(1)
-                sample = self.api.variation(
-                    samples=sample,
-                    additional_info=prompt,
-                    num_variations_per_sample=1,
-                    size=img_size,
-                    variation_degree=variation_degree)
-                log_samples(
-                    samples=samples,
-                    additional_info=additional_info,
-                    folder=f'{self.result_folder}/gen',
-                    plot_samples=plot_images)
+        for i, sample in enumerate(target_samples):
+            sample = sample.reshape(1, width, height, -1)
+            prompt = additional_info[i].reshape(1)
+            sample = self.api.variation(
+                samples=sample,
+                additional_info=prompt,
+                num_variations_per_sample=1,
+                size=img_size,
+                variation_degree=variation_degree)
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{self.result_folder}/gen',
+                plot_samples=plot_images)
