@@ -4,12 +4,34 @@ import numpy as np
 from typing import List
 import json
 
+EXTENSIONS={
+    'image':
+        ['jpg', 'jpeg', 'png', 'gif'],
+    'text':
+        ['txt']
+    }
+
 def argument():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--data_dir',
         type=str,
         required=True
+    )
+    parser.add_argument(
+        '--org_dir',
+        type=str,
+        required=True
+    )
+    parser.add_argument(
+        '--num',
+        type=int,
+        required=False,
+        default=0
+    )
+    parser.add_argument(
+        '--condition',
+        action='store_true'
     )
     parser.add_argument(
         '--class_name',
@@ -19,6 +41,10 @@ def argument():
     )
     parser.add_argument(
         '--split',
+        action='store_true',
+    )
+    parser.add_argument(
+        '--move',
         action='store_true',
     )
     parser.add_argument(
@@ -46,8 +72,19 @@ def argument():
         assert args.dataset is not None
     if args.label_texts is not None:
         args.label_texts = args.label_texts.split(',')
-        
+    if args.move:
+        assert args.org_dir is not None
     return args
+
+def move_data(org: str, tgt: str, num: int=None):
+    idx = 0
+    for file in os.listdir(org):
+        full = os.path.join(org, file)
+        modified = os.path.join(tgt, file)
+        os.replace(full, modified)
+        idx += 1
+        if num > 0 and idx == num:
+            break
 
 def add_prefix(dir: str, prefix: str) -> str:
     """
@@ -62,11 +99,13 @@ def add_prefix(dir: str, prefix: str) -> str:
         modified = os.path.join(dir, f"{prefix}_{file}")
         os.replace(original, modified)
 
-def split(dir: str):
+def split(dir: str, modality: str):
     """
     Split all the data in dir into train/test
     """
-    files = np.array([file for file in os.listdir(dir) if file.split('.')[-1] in ['jpg', 'png']])
+    os.makedirs(os.path.join(dir, 'train'), exist_ok=True)
+    os.makedirs(os.path.join(dir, 'test'), exist_ok=True)
+    files = np.array([file for file in os.listdir(dir) if (file.split('.')[-1] in EXTENSIONS[modality]) and (not file.startswith('visualize'))])
     rng = np.random.default_rng(2022)
     train_indices = rng.choice(len(files) - 1, 100)
     
@@ -92,10 +131,17 @@ def make_config(dir: str, labels: List[str], base_text: str, label_texts: List[s
 
 if __name__ == '__main__':
     args = argument()
-    
+
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+
+    if args.move:
+        move_data(args.org_dir, args.data_dir, args.num)
+
     if args.split:
         split(args.data_dir)
-    else:
+
+    if args.condition:
         add_prefix(args.data_dir, args.class_name)
 
     if len(args.labels) > 1:
