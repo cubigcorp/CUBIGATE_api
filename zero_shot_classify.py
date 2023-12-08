@@ -16,11 +16,10 @@ def argument():
         help="Path of the base data directory."
     )
     parser.add_argument(
-        '--dataset',
+        '--pretrained_model',
         type=str,
-        choices=['age'],
         required=True,
-        help='Name of the dataset to classify.'
+        help="Name of the pretrained model to use."
     )
     parser.add_argument(
         '--device',
@@ -49,7 +48,7 @@ def argument():
     args = parser.parse_args()
     return args
 
-def make_images(dir: str, dataset: str) -> List:
+def make_images(dir: str) -> List:
     data = []
     for (root, dirs, files) in os.walk(dir):
         for file in files:
@@ -59,20 +58,11 @@ def make_images(dir: str, dataset: str) -> List:
             data.append(full)     
     return data
 
-def get_texts(dataset: str) -> List:
-    TEXTS = {
-        'age':{ 'base': 'a photo of a person',
-                'labels': 
-            ['aged 18 to 20',
-               'aged 21 to 30',
-               'aged 31 to 40',
-               'aged 41 to 50',
-               'aged 51 to 60']}
-    }
-
+def get_texts(config: Dict) -> List:
     texts = []
-    for label in TEXTS[dataset]['labels']:
-        text = f'{TEXTS[dataset]["base"]} {label}'
+    base = config['base']
+    for label in config['labels']:
+        text = base.replace('LABEL', label)
         texts.append(text)
     return texts
 
@@ -102,16 +92,7 @@ def predict(images: List, texts: List, device_num: int) -> Dict:
         }
     return predictions
 
-def get_label(pred: Dict, dataset: str):
-    LABELS = {
-        'age':
-            ['18-20',
-             '21-30',
-             '31-40',
-             '41-50',
-             '51-60']
-    }
-    labels = LABELS[dataset]
+def get_label(pred: Dict, labels: List):
     pred_labels = []
     true_labels = []
 
