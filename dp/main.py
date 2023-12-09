@@ -6,7 +6,7 @@ import imageio
 from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
-from dpsda.data_loader import load_data, load_samples
+from dpsda.data_loader import load_private_data, load_samples, load_public_data
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
@@ -21,6 +21,17 @@ from dpsda.agm import get_epsilon
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--use_public_data',
+        type=str2bool,
+        default=False,
+        help="Whether there is public data")
+    parser.add_argument(
+        '--public_data_folder',
+        type=str,
+        required=False,
+        help="Folder for public data if any"
+    )
     parser.add_argument(
         '--epsilon',
         type=float,
@@ -292,7 +303,7 @@ def main():
     logging.info(f'API config: {api.args}')
     metric = "FID" if args.num_private_samples > 2048 else "KID"
 
-    all_private_samples, all_private_labels = load_data(
+    all_private_samples, all_private_labels = load_private_data(
         data_dir=args.data_folder,
         batch_size=args.data_loading_batch_size,
         image_size=args.private_image_size,
@@ -339,6 +350,14 @@ def main():
         if args.data_checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
         start_t = args.data_checkpoint_step + 1
+    elif args.use_public_data:
+        logging.info(f'Using public data in {args.public_data_folder} as initial samples')
+        samples, additional_info = load_public_data(
+            data_folder=args.public_data_folder,
+            modality=args.modality,
+            num_public_samples=args.num_samples_schedule[0],
+            prompt=args.initial_prompt)
+        start_t = 1
     else:
         logging.info('Generating initial samples')
         samples, additional_info = api.random_sampling(

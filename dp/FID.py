@@ -1,5 +1,5 @@
 from dpsda.metrics import compute_metric, make_fid_stats
-from dpsda.data_loader import load_data, load_samples
+from dpsda.data_loader import load_private_data, load_samples
 from dpsda.tokenizer import tokenize
 import argparse
 import numpy as np
@@ -100,7 +100,7 @@ def argument():
     return args
 
 args = argument()
-all_private_samples, all_private_labels = load_data(
+all_private_samples, all_private_labels = load_private_data(
         data_dir=args.data_folder,
         batch_size=args.data_loading_batch_size,
         image_size=args.private_image_size,

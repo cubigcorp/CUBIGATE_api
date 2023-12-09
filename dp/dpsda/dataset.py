@@ -13,7 +13,7 @@ EXTENSIONS={
         ['txt']
 }
 
-def _list_files_recursively(data_dir, modality):
+def list_files_recursively(data_dir, modality):
     results = []
     for entry in sorted(bf.listdir(data_dir)):
         full_path = bf.join(data_dir, entry)
@@ -21,7 +21,7 @@ def _list_files_recursively(data_dir, modality):
         if "." in entry and ext.lower() in EXTENSIONS[modality]:
             results.append(full_path)
         elif bf.isdir(full_path):
-            results.extend(_list_files_recursively(full_path, modality))
+            results.extend(list_files_recursively(full_path, modality))
     return results
 
 class ResizeDataset(Dataset):
@@ -65,7 +65,7 @@ class ImageDataset(Dataset):
         self.folder = folder
         self.transform = transform
         
-        self.local_images = _list_files_recursively(folder, 'image')
+        self.local_images = list_files_recursively(folder, 'image')
         class_names = [bf.basename(path).split('_')[0]
                        for path in self.local_images]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
@@ -88,7 +88,7 @@ class ImageDataset(Dataset):
 class TextDataset(Dataset):
     def __init__(self, folder, model):
         self.folder = folder
-        self.local_texts = _list_files_recursively(folder, 'text')
+        self.local_texts = list_files_recursively(folder, 'text')
         class_name = [bf.basename(path).split('_')[0]
                       for path in self.local_texts]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_name)))}

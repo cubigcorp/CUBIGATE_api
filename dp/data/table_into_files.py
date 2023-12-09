@@ -15,19 +15,19 @@ def argument():
         '--result_dir',
         required=True,
         type=str,
-        help="Path of the result directory. The final path will be result_dir/[test|train]"
+        help="Path of the result directory. The final path will be result_dir/[private|public]"
     )
     parser.add_argument(
-        '--train',
+        '--public',
         action='store_true',
         default=True,
-        help="Whether it is train dataset"
+        help="Whether it is public dataset"
     )
     parser.add_argument(
-        '--test',
+        '--private',
         action='store_true',
         required=False,
-        help="Whether it is a test dataset"
+        help="Whether it is a private dataset"
     )
     parser.add_argument(
         '--concat_n_split',
@@ -49,22 +49,22 @@ def argument():
         help="name of the column to use as label"
     )
     args = parser.parse_args()
-    assert args.train ^ args.test
+    assert args.public ^ args.private
     if args.concat_n_split is not None:
-        test = os.path.join(args.result_dir, 'test')
-        train = os.path.join(args.result_dir, 'train')
-        os.makedirs(test, exist_ok=True)
-        os.makedirs(train, exist_ok=True)
-        args.result_dir = [test, train]
+        private = os.path.join(args.result_dir, 'private')
+        public = os.path.join(args.result_dir, 'public')
+        os.makedirs(private, exist_ok=True)
+        os.makedirs(public, exist_ok=True)
+        args.result_dir = [private, public]
     else:
-        target = 'train' if args.train else 'test'
+        target = 'public' if args.public else 'private'
         args.result_dir = [os.path.join(args.result_dir, target)]
         os.makedirs(args.result_dir, exist_ok=True)
     return args
 
 def write_file(df: pd.DataFrame, label_idx: int, dir: str):
     for row in df.itertuples(name=None):
-        items = [str(i) for i in row[1:]]
+        items = [str(row[i]) for i in range(1, len(row)) if i != label_idx + 1]
         text = ' '.join(items) 
         label = row[label_idx + 1] if label_idx is not None else "UNCOND"
         with open(os.path.join(dir, f'{label}_{row[0]}.txt'), 'w') as f:
@@ -80,12 +80,12 @@ if __name__ == '__main__':
 
     if args.concat_n_split is not None:
         total = df.shape[0]
-        train = int(total * args.concat_n_split)
-        indices = np.random.choice(total - 1, train, replace=False)
-        print(f"{len(indices)} samples for train")
-        train_df = df.loc[indices]
-        test_df = df.loc[df.index.isin(indices)]
-        data = [train_df, test_df]
+        public = int(total * args.concat_n_split)
+        indices = np.random.choice(total - 1, public, replace=False)
+        print(f"{len(indices)} samples for public")
+        public_df = df.loc[indices]
+        private_df = df.loc[df.index.isin(indices)]
+        data = [public_df, private_df]
     else:
         data = [df]
 

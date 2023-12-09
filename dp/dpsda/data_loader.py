@@ -3,11 +3,13 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader
 import numpy as np
 import logging
+import blobfile as bf
+from PIL import Image
 
-from .dataset import ImageDataset, TextDataset
+from .dataset import ImageDataset, TextDataset, EXTENSIONS, list_files_recursively
 
 
-def load_data(data_dir, batch_size, image_size, class_cond,
+def load_private_data(data_dir, batch_size, image_size, class_cond,
               num_private_samples, modality: str, model=None):
 
     if modality == 'image':
@@ -60,3 +62,22 @@ def load_samples(path):
     samples = data['samples']
     additional_info = data['additional_info']
     return samples, additional_info
+
+
+def load_public_data(data_folder: str, modality: str, num_public_samples: int, prompt: str) -> np.ndarray:
+    files = list_files_recursively(data_folder, modality)
+    additional_info = []
+    samples = []
+    for path in files:
+        if modality == 'image':  # Not tested
+            with bf.BlobFile(path, 'rb') as f:
+                sample = Image.open(f)
+                sample.load()
+        elif modality == 'text':
+            with bf.BlobFile(path, 'r') as f:
+                sample = f.read()
+        samples.append(sample)
+        if len(samples) == num_public_samples:
+            break
+    additional_info.extend([prompt[0].replace('BATCH', " ")] * len(samples))
+    return np.array(samples), np.array(additional_info)
