@@ -8,6 +8,7 @@ from PIL import Image
 import torch
 import numpy as np
 import json
+import openai
 
 def argument():
     parser = argparse.ArgumentParser()
@@ -33,8 +34,20 @@ def argument():
         '--model_name',
         type=str,
         required=True,
-        choices=['gpt', 'clip', 'bert'],
+        choices=['gpt', 'clip', 'bert', 'chatgpt'],
         help="Name of the pretrained model to use."
+    )
+    parser.add_argument(
+        '--api_key_path',
+        type=str,
+        required=False,
+        help="API key for chatGPT"
+    )
+    parser.add_argument(
+        '--few_shot',
+        type=int,
+        required=False,
+        help="Number of exemplars for few-shot learning"
     )
     parser.add_argument(
         '--checkpoint',
@@ -45,7 +58,7 @@ def argument():
     parser.add_argument(
         '--device',
         type=int,
-        required=True,
+        required=False,
         help="Index of the GPU device to put everything on."
     )
     parser.add_argument(
@@ -111,29 +124,41 @@ def get_texts(config: Dict, label_text: bool) -> List:
             text = base.replace('LABEL', label)
             texts.append(text)
     else:
-        texts = config['labels']
+        texts = base
     return texts
 
-def predict(samples: List, texts: List[str], device_num: int, model_name: str, checkpoint: str) -> Dict:
+def predict(samples: List, texts, labels: List[str], device_num: int, model_name: str, checkpoint: str, few_shot: int=0, api_key_path: str=None) -> Dict:
     # checkpoint = "openai/clip-vit-large-patch14"
     
     if model_name == 'clip':
-        predictions = clip_predict(samples, texts, device_num, checkpoint)
+        predictions = clip_predict(samples, labels, device_num, checkpoint)
     elif model_name == 'gpt':
-        predictions = gpt_predict(samples, texts, device_num, checkpoint)
+        predictions = gpt_predict(samples, labels, device_num, checkpoint)
     elif model_name == 'bert':
-        predictions = bert_predict(samples, texts, device_num, checkpoint)
+        predictions = bert_predict(samples, labels, device_num, checkpoint)
     elif model_name == 'chatgpt':
-        predictions = clip_predict(samples, texts, device_num, checkpoint)
+        with open(api_key_path, 'r') as f:
+            api_key = f.read()
+        predictions = chatgpt_predict(samples, texts, checkpoint, few_shot, api_key)
 
     return predictions
 
-def bert_predict(samples: List[str], texts: List[str], device_num: int, checkpoint: str) -> Dict:
+def chatgpt_predict(samples: List[str], texts: List[str], checkpoint: str, few_shot: int=0, key: str=None) -> Dict:
+    openai.api_key = key
+
+    for idx, sample_path in enumerate(samples):
+        rng = np.random.default_rng(seed=2023)
+        
+        exem_idx = rng.choice(len(samples) - 1, few_shot)
+        exemplars = np.array(samples)[exem_idx]
+    
+
+def bert_predict(samples: List[str], labels: List[str], device_num: int, checkpoint: str) -> Dict:
     device = f"cuda:{device_num}"
     tokenizer = BertTokenizer.from_pretrained(checkpoint)
     model = BertForSequenceClassification.from_pretrained(checkpoint)
     classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer, device=device)
-    labels = list(set(texts))
+    labels = list(set(labels))
 
     predictions = {}
     for sample_path in samples:
@@ -148,10 +173,10 @@ def bert_predict(samples: List[str], texts: List[str], device_num: int, checkpoi
         }
     return predictions
 
-def gpt_predict(samples: List[str], texts: List[str], device_num: int, checkpoint: str) -> Dict:
+def gpt_predict(samples: List[str], labels: List[str], device_num: int, checkpoint: str) -> Dict:
     device = f'cuda:{device_num}'
     classifier = pipeline("zero-shot-classification", model=checkpoint, device=device)
-    labels = list(set(texts))
+    labels = list(set(labels))
 
     predictions = {}
     for sample_path in samples:
@@ -243,7 +268,7 @@ if __name__ == '__main__':
         config = json.load(f)
     texts = get_texts(config['texts'], args.label_text)
     if not os.path.exists(file_name):
-        predictions = predict(samples, texts, args.device, args.model_name, args.checkpoint)
+        predictions = predict(samples, texts, config['total_labels'], args.device, args.model_name, args.checkpoint, args.few_shot, args.api_key_path)
     else:
         with open(file_name, 'r') as f:
             predictions = json.load(f)

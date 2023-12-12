@@ -97,15 +97,15 @@ def add_prefix(dir: str, prefix: str) -> str:
         modified = os.path.join(dir, f"{prefix}_{file}")
         os.replace(original, modified)
 
-def split(dir: str, modality: str):
+def split(dir: str, modality: str, num: int):
     """
     Split all the data in dir into train/test
     """
     os.makedirs(os.path.join(dir, 'train'), exist_ok=True)
     os.makedirs(os.path.join(dir, 'test'), exist_ok=True)
-    files = np.array([file for file in os.listdir(dir) if (file.split('.')[-1] in EXTENSIONS[modality]) and (not file.startswith('visualize'))])
+    files = np.array([file for file in os.listdir(dir) if file.split('.')[-1] in EXTENSIONS[modality]])
     rng = np.random.default_rng(2022)
-    train_indices = rng.choice(len(files) - 1, 100)
+    train_indices = rng.choice(len(files) - 1, num)
     
     for idx in range(len(files)):
         if idx in train_indices:
@@ -142,7 +142,7 @@ if __name__ == '__main__':
         move_data(args.org_dir, args.data_dir, args.num, args.modality)
 
     if args.split:
-        split(args.data_dir, args.modality)
+        split(args.data_dir, args.modality, args.num)
 
     if args.condition:
         add_prefix(args.data_dir, args.class_name)
