@@ -27,7 +27,12 @@ def argument():
         '--num',
         type=int,
         required=False,
-        default=0
+        default=100
+    )
+    parser.add_argument(
+        '--modality',
+        type=str,
+        required=True
     )
     parser.add_argument(
         '--condition',
@@ -76,9 +81,11 @@ def argument():
         assert args.org_dir is not None
     return args
 
-def move_data(org: str, tgt: str, num: int=None):
+def move_data(org: str, tgt: str, num: int, modality: str):
     idx = 0
     for file in os.listdir(org):
+        if file.split('.')[-1] not in EXTENSIONS[modality]:
+            continue
         full = os.path.join(org, file)
         modified = os.path.join(tgt, file)
         os.replace(full, modified)
@@ -91,7 +98,7 @@ def add_prefix(dir: str, prefix: str) -> str:
     Add class name as prefix to the names of file in dir
     """
     for file in os.listdir(dir):
-        if not file[0].isdigit():
+        if not file.split('_')[1][0].isdigit():
             continue
         if os.path.isdir(os.path.join(dir, file)):
             continue
@@ -136,10 +143,10 @@ if __name__ == '__main__':
         os.makedirs(args.data_dir)
 
     if args.move:
-        move_data(args.org_dir, args.data_dir, args.num)
+        move_data(args.org_dir, args.data_dir, args.num, args.modality)
 
     if args.split:
-        split(args.data_dir)
+        split(args.data_dir, args.modality)
 
     if args.condition:
         add_prefix(args.data_dir, args.class_name)
