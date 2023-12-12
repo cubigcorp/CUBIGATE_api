@@ -2,7 +2,8 @@ import os
 import argparse
 from typing import Dict, List
 from transformers import CLIPProcessor, CLIPModel
-from transformers import GPT2ForQuestionAnswering, GPT2Tokenizer
+from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import pipeline
 from PIL import Image
 import torch
 import numpy as np
@@ -17,13 +18,26 @@ def argument():
         help="Path of the base data directory."
     )
     parser.add_argument(
+        '--suffix',
+        type=str,
+        required=False,
+        help="Suffix for output"
+    )
+    parser.add_argument(
         '--modality',
         type=str,
         choices=['image', 'text'],
         required=True
     )
     parser.add_argument(
-        '--pretrained_model',
+        '--model_name',
+        type=str,
+        required=True,
+        choices=['gpt', 'clip', 'bert'],
+        help="Name of the pretrained model to use."
+    )
+    parser.add_argument(
+        '--checkpoint',
         type=str,
         required=True,
         help="Name of the pretrained model to use."
@@ -39,6 +53,11 @@ def argument():
         type=int,
         required=True,
         help="Number of classes."
+    )
+    parser.add_argument(
+        '--label_text',
+        action='store_true',
+        help="Whether there are label specific texts"
     )
     parser.add_argument(
         '--result_dir',
@@ -74,38 +93,80 @@ def get_samples(dir: str, modality: str) -> List:
             data.append(full)     
     return data
 
-def get_texts(config: Dict, num: int = -1) -> List:
+def get_texts(config: Dict, label_text: bool) -> List:
     """
     Get a list of text for classification
+
+    Parameters
+    ----------
+    config:
+        text dictionary
+    num_sample:
+        needed when there is no label specific prompt
     """
     texts = []
     base = config['base']
-    if num > 0:
-        texts = [base for _ in range(num)]
-    else:
+    if label_text :
         for label in config['labels']:
             text = base.replace('LABEL', label)
             texts.append(text)
+    else:
+        texts = config['labels']
     return texts
 
 def predict(samples: List, texts: List[str], device_num: int, model_name: str, checkpoint: str) -> Dict:
-    checkpoint = "openai/clip-vit-large-patch14"
+    # checkpoint = "openai/clip-vit-large-patch14"
     
     if model_name == 'clip':
         predictions = clip_predict(samples, texts, device_num, checkpoint)
     elif model_name == 'gpt':
-        pass
+        predictions = gpt_predict(samples, texts, device_num, checkpoint)
+    elif model_name == 'bert':
+        predictions = bert_predict(samples, texts, device_num, checkpoint)
     elif model_name == 'chatgpt':
-        pass
+        predictions = clip_predict(samples, texts, device_num, checkpoint)
 
+    return predictions
+
+def bert_predict(samples: List[str], texts: List[str], device_num: int, checkpoint: str) -> Dict:
+    device = f"cuda:{device_num}"
+    tokenizer = BertTokenizer.from_pretrained(checkpoint)
+    model = BertForSequenceClassification.from_pretrained(checkpoint)
+    classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer, device=device)
+    labels = list(set(texts))
+
+    predictions = {}
+    for sample_path in samples:
+        with open(sample_path, 'r') as f:
+            text = f.read()
+        output = classifier(text, labels)
+        prob = output['scores']
+        idx = max(range(len(prob)), key=lambda i: prob[i])
+        predictions[sample_path]= {
+            'probs': prob,
+            'label': idx
+        }
     return predictions
 
 def gpt_predict(samples: List[str], texts: List[str], device_num: int, checkpoint: str) -> Dict:
     device = f'cuda:{device_num}'
-    processor = GPT2Tokenizer.from_pretrained(checkpoint)
-    model = GPT2ForQuestionAnswering.from_pretrained(checkpoint)
-    model.to(device)
-    pass
+    classifier = pipeline("zero-shot-classification", model=checkpoint, device=device)
+    labels = list(set(texts))
+
+    predictions = {}
+    for sample_path in samples:
+        with open(sample_path, 'r') as f:
+            text = f.read()
+        output = classifier(text, labels)
+        prob = output['scores']
+        idx = max(range(len(prob)), key=lambda i: prob[i])
+        predictions[sample_path]= {
+            'probs': prob,
+            'label': idx
+        }
+
+    return predictions
+
     
 
 def clip_predict(samples: List, texts: List[str], device_num: int, checkpoint: str) -> Dict:
@@ -142,7 +203,8 @@ def get_label(pred: Dict, labels: List):
         temp = img.split('/')
         if len(temp) < 2:
             continue
-        true_labels.append(img.split('/')[-2])
+        true_label = img.split('/')[-2]
+        true_labels.append(true_label)
         pred_labels.append(labels[pred[img]['label']])
 
     return np.array(pred_labels), np.array(true_labels)
@@ -163,26 +225,30 @@ def get_confidence(pred: Dict, num_classes: int) -> List:
         conf = prediction['probs'][idx]
         confidence[idx] += conf
         count[idx] += 1
+
     confidence[num_classes] = sum(confidence)
+    print(confidence)
     count[num_classes] = sum(count)
     confidence = confidence / count
     return confidence.tolist(), count.tolist()
 
 if __name__ == '__main__':
     args = argument()
-    suffix = 'dp' if args.dp else 'non_dp'
+    dp = 'dp' if args.dp else 'non_dp'
     if not os.path.exists(args.result_dir):
         os.makedirs(args.result_dir)
-    file_name = f'{args.result_dir}/zero-shot_{args.dataset}_{suffix}.json'
-    images = get_samples(args.data_dir, args.dataset)
-    texts = get_texts(args.dataset)
+    file_name = f'{args.result_dir}/zero-shot_{args.suffix}_{dp}.json'
+    samples = get_samples(args.data_dir, args.modality)
+    with open(os.path.join(args.data_dir, 'config')) as f:
+        config = json.load(f)
+    texts = get_texts(config['texts'], args.label_text)
     if not os.path.exists(file_name):
-        predictions = predict(images, texts, args.device)
+        predictions = predict(samples, texts, args.device, args.model_name, args.checkpoint)
     else:
         with open(file_name, 'r') as f:
             predictions = json.load(f)
 
-    pred, target = get_label(predictions, args.dataset)
+    pred, target = get_label(predictions, config['total_labels'])
     confidence, pred_dist = get_confidence(predictions, args.num_classes)
     predictions['accuracy'] = accuracy(pred, target)
     predictions['confidence'] = confidence

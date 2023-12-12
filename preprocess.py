@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 from typing import List
 import json
+import shutil
 
 EXTENSIONS={
     'image':
@@ -21,7 +22,7 @@ def argument():
     parser.add_argument(
         '--org_dir',
         type=str,
-        required=True
+        required=False,
     )
     parser.add_argument(
         '--num',
@@ -32,7 +33,7 @@ def argument():
     parser.add_argument(
         '--modality',
         type=str,
-        required=True
+        required=False
     )
     parser.add_argument(
         '--condition',
@@ -60,12 +61,6 @@ def argument():
         help="Name of labels, each of which identified by a comma without a blank"
     )
     parser.add_argument(
-        '--label_texts',
-        type=str,
-        required=False,
-        help="Texts for clip image zero-shot prediction"
-    )
-    parser.add_argument(
         '--base_text',
         type=str,
         required=False,
@@ -73,10 +68,6 @@ def argument():
     )
     args = parser.parse_args()
     args.labels = args.labels.split(',')
-    if len(args.labels) > 1:
-        assert args.dataset is not None
-    if args.label_texts is not None:
-        args.label_texts = args.label_texts.split(',')
     if args.move:
         assert args.org_dir is not None
     return args
@@ -88,7 +79,7 @@ def move_data(org: str, tgt: str, num: int, modality: str):
             continue
         full = os.path.join(org, file)
         modified = os.path.join(tgt, file)
-        os.replace(full, modified)
+        shutil.copy(full, modified)
         idx += 1
         if num > 0 and idx == num:
             break
@@ -126,11 +117,16 @@ def split(dir: str, modality: str):
         modified = os.path.join(args.data_dir, dir, files[idx])
         os.replace(original, modified)
 
-def make_config(dir: str, labels: List[str], base_text: str, label_texts: List[str]):
-    config = {'labels': labels}
+def make_config(dir: str, labels: List[str], base_text: str):
+    config = {'total_labels': labels}
     if base_text is not None:
-        config['texts'] = {'base': base_text,
-                        'labels': label_texts}
+        config['texts'] = {'base': base_text}
+    config['texts']['labels'] = []
+    for (root, _, files) in os.walk(dir):
+        for file in files:
+            full = os.path.join(root, file)
+            label = file.split('_')[0]
+            config['texts']['labels'].append(label)
     file = os.path.join(dir, 'config')
     with open(file, 'w') as f:
         json.dump(config, f)
@@ -152,7 +148,7 @@ if __name__ == '__main__':
         add_prefix(args.data_dir, args.class_name)
 
     if len(args.labels) > 1:
-        make_config(args.data_dir, args.labels, args.base_text, args.label_texts)
+        make_config(args.data_dir, args.labels, args.base_text)
 
 
     
