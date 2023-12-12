@@ -1,4 +1,4 @@
-python main.py \
+python pre_main.py \
 --generate \
 --count_threshold 2.0 \
 --lookahead_degree 2 \

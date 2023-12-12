@@ -9,20 +9,26 @@ from cubigate.dp.dp_counter import dp_nn_histogram
 from cubigate.dp.apis import get_api_class_from_name
 from cubigate.dp.data_logger import log_samples, log_count, visualize
 from cubigate.dp.agm import get_epsilon
+from PIL import Image
+import shutil
+import zipfile
 
 class CubigDPGenerator():
     def __init__(
         self, 
-        api: str,
-        feature_extractor: str,
-        result_folder: str,
-        tmp_folder: str,
-        data_loading_batch_size: int,
-        feature_extractor_batch_size: int,
-        org_img_size: int,
-        conditional: bool,
-        num_org_data: int,
+      #  api: str,
+      #  feature_extractor: str,
+        # result_folder: str,
+        # tmp_folder: str,
+        # data_loading_batch_size: int,
+        # feature_extractor_batch_size: int,
+        # org_img_size: int,
+        # conditional: bool,
+        # num_org_data: int,
         ) -> None:
+        
+        
+        
         """
         DP synthetic data generator
 
@@ -47,6 +53,21 @@ class CubigDPGenerator():
         feature_extractor:
             Name of feature extractor to use
         """
+        
+        """fixing arguments for optimizing fts"""
+        
+        api="stable_diffusion"
+        result_folder="result/cookie"
+        #TODO: tmp_folder가 필요한지 체크 
+        tmp_folder="/tmp/cookie"
+        data_loading_batch_size=100
+        feature_extractor_batch_size=500
+        org_img_size=1024
+        num_org_data=10
+        feature_extractor='clip_vit_b_32'
+        conditional=False
+        
+        
         # 0-a. Make result directory
         if not os.path.exists(result_folder):
             os.makedirs(result_folder)
@@ -68,20 +89,24 @@ class CubigDPGenerator():
 
     def train(
         self,
-        api_args,
-        data_folder: str,
-        data_checkpoint_path: Optional[str],
-        data_checkpoint_step: Optional[int],
-        initial_prompt: Optional[str],
-        num_samples_schedule: List[int],
-        variation_degree_schedule: List[int],
-        lookahead_degree: int,
-        img_size: str,
+        iterations:int,
         epsilon: float,
-        delta: float,
-        count_threshold: int,
-        plot_images: bool=False,
-        nn_mode: str='L2'):
+        delta: float):
+        
+        """fixed for display"""
+        api_args=['--random_sampling_checkpoint', 'runwayml/stable-diffusion-v1-5', '--random_sampling_guidance_scale', '7.5', '--random_sampling_num_inference_steps', '20', '--random_sampling_batch_size', '10', '--variation_checkpoint', 'CompVis/stable-diffusion-v1-4', '--variation_guidance_scale', '7.5', '--variation_num_inference_steps', '20', '--variation_batch_size', '10']
+        data_folder="./input_data/cookie"
+        data_checkpoint_step=0
+        initial_prompt= "A photo of ragdoll cat"
+        num_samples_schedule=[10]*iterations
+        variation_degree_schedule=[1.0-i*0.02 for i in range(iterations)]
+        lookahead_degree=0
+        img_size='512x512'
+        data_checkpoint_path="./result/cookie/1/_samples.npz"
+        count_threshold=0
+        plot_images=False
+        nn_mode="L2"
+        
         """
         Learn the distribution
 
@@ -121,6 +146,8 @@ class CubigDPGenerator():
         """
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
+        
+        
 
         # 2. Load original data
         all_private_samples, all_private_labels = load_data(
@@ -285,17 +312,20 @@ class CubigDPGenerator():
                 folder=f'{self.result_folder}/{t}',
                 plot_samples=plot_images)
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
+        return f'{self.result_folder}/{t}/_samples.npz'
 
 
     def generate(
-        self,
-        base_data: str,
-        img_size: str,
-        num_samples: int,
-        variation_degree: float,
-        plot_images: bool,
-        api_args
+        self, base_data
+
     ):
+        """FIX argumnets for display"""
+    
+        img_size='512x512'
+        num_samples=2
+        variation_degree=0.5
+        plot_images=False
+        api_args=['--random_sampling_checkpoint', 'runwayml/stable-diffusion-v1-5', '--random_sampling_guidance_scale', '7.5', '--random_sampling_num_inference_steps', '20', '--random_sampling_batch_size', '10', '--variation_checkpoint', 'CompVis/stable-diffusion-v1-4', '--variation_guidance_scale', '7.5', '--variation_num_inference_steps', '20', '--variation_batch_size', '10']
         """
         Generate images based on the distribution learned
 
@@ -339,3 +369,16 @@ class CubigDPGenerator():
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/gen',
                 plot_samples=plot_images)
+        generated_image_datas=np.load(f'{self.result_folder}/gen/_samples.npz')
+        generated_image_datas=generated_image_datas["samples"]
+        print(generated_image_datas.shape)
+        for i, image in enumerate(generated_image_datas):
+            Image.fromarray(image).save(f"{self.result_folder}/gen/zip/{i}.png")
+        shutil.make_archive(f"{self.result_folder}/gen/synthetic_image", 'zip', f"{self.result_folder}/gen/zip/")
+        
+        #TODO: zip파일을 서버에 저장안하도록 바꾸면 더 좋을 것 같다.
+        synthetic_img_zip=zipfile.ZipFile(f"{self.result_folder}/gen/synthetic_image.zip")
+        
+        return synthetic_img_zip
+        
+    
