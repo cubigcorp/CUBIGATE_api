@@ -23,5 +23,5 @@ python main.py \
 --api_device 2 \
 --epsilon 1.0 \
 --delta 0.0 \
-# --data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/17/_samples.npz \
-# --data_checkpoint_step 17
+--data_checkpoint_path /home/minsy/CUBIG/dp/result/clinical/17/_samples.npz \
+--data_checkpoint_step 17
