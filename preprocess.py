@@ -50,7 +50,7 @@ def argument():
         action='store_true',
     )
     parser.add_argument(
-        '--move',
+        '--copy',
         action='store_true',
     )
     parser.add_argument(
@@ -68,11 +68,14 @@ def argument():
     )
     args = parser.parse_args()
     args.labels = args.labels.split(',')
-    if args.move:
+    if args.copy:
         assert args.org_dir is not None
     return args
 
-def move_data(org: str, tgt: str, num: int, modality: str):
+def copy_data(org: str, tgt: str, num: int, modality: str):
+    """
+    Copy data from org to tgt in case where it is necessary to gather the synthetic data and split them.
+    """
     idx = 0
     for file in os.listdir(org):
         if file.split('.')[-1] not in EXTENSIONS[modality]:
@@ -118,6 +121,18 @@ def split(dir: str, modality: str, num: int):
         os.replace(original, modified)
 
 def make_config(dir: str, labels: List[str], base_text: str):
+    """
+    Make a configure file for further tasks
+
+    Parameters
+    ----------
+    dir:
+        Directory to store the config
+    labels:
+        List of labels - 현재는 샘플별로 하고 있는데 unique한 value만 저장하는 식으로 수정...해야 할 듯...
+    base_text:
+        Main prompt
+    """
     config = {'total_labels': labels}
     if base_text is not None:
         config['texts'] = {'base': base_text}
@@ -138,8 +153,8 @@ if __name__ == '__main__':
     if not os.path.exists(args.data_dir):
         os.makedirs(args.data_dir)
 
-    if args.move:
-        move_data(args.org_dir, args.data_dir, args.num, args.modality)
+    if args.copy:
+        copy_data(args.org_dir, args.data_dir, args.num, args.modality)
 
     if args.split:
         split(args.data_dir, args.modality, args.num)

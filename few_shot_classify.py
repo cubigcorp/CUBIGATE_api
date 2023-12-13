@@ -139,18 +139,43 @@ def predict(samples: List, texts, labels: List[str], device_num: int, model_name
     elif model_name == 'chatgpt':
         with open(api_key_path, 'r') as f:
             api_key = f.read()
-        predictions = chatgpt_predict(samples, texts, checkpoint, few_shot, api_key)
+        predictions = chatgpt_predict(samples, texts, labels, checkpoint, few_shot, api_key)
 
     return predictions
 
-def chatgpt_predict(samples: List[str], texts: List[str], checkpoint: str, few_shot: int=0, key: str=None) -> Dict:
+def chatgpt_predict(samples: List[str], text: str, labels: List[str], checkpoint: str, few_shot: int=0, key: str=None) -> Dict:
     openai.api_key = key
-
+    rng = np.random.default_rng(seed=2023)
+    every = [*range(len(samples))]
+    predictions = {}
     for idx, sample_path in enumerate(samples):
-        rng = np.random.default_rng(seed=2023)
-        
-        exem_idx = rng.choice(len(samples) - 1, few_shot)
+        candidate = every.copy()
+        candidate.remove(idx)
+        exem_idx = rng.choice(candidate, few_shot)
         exemplars = np.array(samples)[exem_idx]
+        exem_prompt = ""
+        for exemplar in exemplars:
+            with open(exemplar, 'r') as f:
+                exem = f.read()
+            label = exemplar.split('/')[-2]
+            exem_prompt += f'{exem} : {label}\n'
+        with open(sample_path, 'r') as f:
+            sample = f.read()
+        unique_label = list(set(labels))
+        label_text = f"Do not use any words other than {', '.join(unique_label[:-1])} or {unique_label[-1]}"
+        prompt = f"{text} Answer in one word. {label_text} \n\n{exem_prompt}{sample} : "
+        message = [
+                    {"role": "user", "content": prompt }
+                ]
+        response = openai.ChatCompletion.create(
+                  model=checkpoint, 
+                  messages=message,
+                  request_timeout = 1000)
+        label = response.choices[0].message.content
+        predictions[sample_path] = {
+            'label': label.lower().strip()
+        }
+    return predictions
     
 
 def bert_predict(samples: List[str], labels: List[str], device_num: int, checkpoint: str) -> Dict:
@@ -220,22 +245,25 @@ def clip_predict(samples: List, texts: List[str], device_num: int, checkpoint: s
         }
     return predictions
 
-def get_label(pred: Dict, labels: List):
+def get_label(pred: Dict, labels: List, by_index: bool):
     pred_labels = []
     true_labels = []
 
-    for img in pred.keys():
-        temp = img.split('/')
+    for sample in pred.keys():
+        temp = sample.split('/')
         if len(temp) < 2:
             continue
-        true_label = img.split('/')[-2]
+        true_label = sample.split('/')[-2]
         true_labels.append(true_label)
-        pred_labels.append(labels[pred[img]['label']])
+        if by_index:
+            pred_labels.append(labels[pred[sample]['label']])
+        else:
+            pred_labels.append(pred[sample]['label'])
 
     return np.array(pred_labels), np.array(true_labels)
     
 
-def accuracy(pred: np.ndarray, target: np.ndarray) -> float:
+def get_accuracy(pred: np.ndarray, target: np.ndarray) -> float:
     correct = len(np.where(pred == target)[0])
     acc = correct / len(pred)
     return acc
@@ -252,10 +280,23 @@ def get_confidence(pred: Dict, num_classes: int) -> List:
         count[idx] += 1
 
     confidence[num_classes] = sum(confidence)
-    print(confidence)
     count[num_classes] = sum(count)
     confidence = confidence / count
-    return confidence.tolist(), count.tolist()
+    return confidence.tolist()
+
+def get_dist(pred: Dict, num_classes: int, labels: List) -> [List, int]:
+    count = np.array([0] * (num_classes + 1))
+    for prediction in pred.values():
+        if not isinstance(prediction, Dict):
+            continue
+        label = prediction['label']
+        if label in labels:
+            idx = labels.index(label)
+        else:
+            idx = num_classes
+        count[idx] += 1
+    count[num_classes] = sum(count)
+    return count.tolist()
 
 if __name__ == '__main__':
     args = argument()
@@ -272,11 +313,14 @@ if __name__ == '__main__':
     else:
         with open(file_name, 'r') as f:
             predictions = json.load(f)
-
-    pred, target = get_label(predictions, config['total_labels'])
-    confidence, pred_dist = get_confidence(predictions, args.num_classes)
-    predictions['accuracy'] = accuracy(pred, target)
-    predictions['confidence'] = confidence
+    by_index = False if args.model_name == 'chatgpt' else True  # ChatGPT는 라벨 이름을 그대로 받고 다른 모델은 인덱스로 받음
+    pred, target = get_label(predictions, config['total_labels'], by_index)
+    predictions['accuracy'] = get_accuracy(pred, target)
+    if args.model_name != 'chatgpt':  
+        confidence, pred_dist = get_confidence(predictions, args.num_classes)
+        predictions['confidence'] = confidence
+    else:
+        pred_dist = get_dist(predictions, args.num_classes, config['total_labels'])
     predictions['predicted_distribution'] = pred_dist
 
     with open(file_name, 'w') as f:
