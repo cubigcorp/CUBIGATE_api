@@ -19,6 +19,20 @@ def argument():
         help="Path of the base data directory."
     )
     parser.add_argument(
+        '--partial',
+        type=int,
+        required=False,
+        default=np.inf,
+        help="Number of samples to load from data directory"
+    )
+    parser.add_argument(
+        '--config',
+        type=str,
+        required=False,
+        default="",
+        help="Configure file path, needed if it's not in data directory"
+    )
+    parser.add_argument(
         '--suffix',
         type=str,
         required=False,
@@ -97,9 +111,11 @@ def argument():
         args.label_texts = args.label_texts.split(',')
     if args.few_shot > 0:
         assert args.exem_samples_dir is not None, f"{args.few_shot}-shot but no target sample."
+    if args.config == "":
+        args.config = os.path.join(args.data_dir, 'config')
     return args
 
-def get_samples(dir: str, modality: str) -> List:
+def get_samples(dir: str, modality: str, num: Optional[int]) -> List:
     """
     Get a list of target samples
     """
@@ -115,7 +131,9 @@ def get_samples(dir: str, modality: str) -> List:
             if file.split('.')[-1] not in EXTENSIONS[modality]:
                 continue
             full = os.path.join(root, file)
-            data.append(full)     
+            data.append(full) 
+            if len(data) == num:
+                break
     return data
 
 def get_texts(config: Dict, label_text: Optional[List[str]]) -> Union[List, str]:
@@ -158,7 +176,7 @@ def chatgpt_predict(samples: List[Union[str, float]], modality: str, exem_sample
     openai.api_key = key
 
     if few_shot > 0:
-        exem_samples = get_samples(exem_samples_dir, modality)
+        exem_samples = get_samples(dir=exem_samples_dir, modality=modality, num=None)
         rng = np.random.default_rng(seed=2023)
         exem_idx = rng.choice(len(exem_samples) - 1, few_shot)
         exemplars = np.array(exem_samples)[exem_idx]
@@ -316,8 +334,8 @@ if __name__ == '__main__':
     if not os.path.exists(args.result_dir):
         os.makedirs(args.result_dir)
     file_name = f'{args.result_dir}/zero-shot_{args.suffix}_{dp}.json'
-    samples = get_samples(args.data_dir, args.modality)
-    with open(os.path.join(args.data_dir, 'config')) as f:
+    samples = get_samples(args.data_dir, args.modality, args.partial)
+    with open(args.config) as f:
         config = json.load(f)
     texts = get_texts(config['texts'], args.label_texts)
     if not os.path.exists(file_name):

@@ -42,14 +42,20 @@ def parse_args():
         type=float,
         required=False)
     parser.add_argument(
-            '--device',
+        '--device',
         type=int,
         required=True)
     parser.add_argument(
-            '--save_samples_live',
+        '--save_samples_live',
         action='store_true')
     parser.add_argument(
-            '--live_loading_target',
+        '--save_samples_live_freq',
+        type=int,
+        required=False,
+        default=np.inf,
+        help="Live saving Frequency")
+    parser.add_argument(
+        '--live_loading_target',
         type=str,
         required=False)
     parser.add_argument(
