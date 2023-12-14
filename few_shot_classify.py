@@ -170,7 +170,7 @@ def chatgpt_predict(samples: List[Union[str, float]], modality: str, exem_sample
             exem_prompt += f'{exem} : {label}\n'
 
     predictions = {}
-    for idx, sample_path in enumerate(samples):
+    for sample_path in samples:
         with open(sample_path, 'r') as f:
             sample = f.read()
         unique_label = list(set(labels))
