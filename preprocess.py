@@ -129,19 +129,13 @@ def make_config(dir: str, labels: List[str], base_text: str):
     dir:
         Directory to store the config
     labels:
-        List of labels - 현재는 샘플별로 하고 있는데 unique한 value만 저장하는 식으로 수정...해야 할 듯...
+        List of labels
     base_text:
         Main prompt
     """
     config = {'total_labels': labels}
     if base_text is not None:
         config['texts'] = {'base': base_text}
-    config['texts']['labels'] = []
-    for (root, _, files) in os.walk(dir):
-        for file in files:
-            full = os.path.join(root, file)
-            label = file.split('_')[0]
-            config['texts']['labels'].append(label)
     file = os.path.join(dir, 'config')
     with open(file, 'w') as f:
         json.dump(config, f)

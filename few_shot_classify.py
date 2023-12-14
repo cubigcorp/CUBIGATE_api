@@ -1,6 +1,6 @@
 import os
 import argparse
-from typing import Dict, List
+from typing import Dict, List, Union, Optional
 from transformers import CLIPProcessor, CLIPModel
 from transformers import BertTokenizer, BertForSequenceClassification
 from transformers import pipeline
@@ -50,6 +50,12 @@ def argument():
         help="Number of exemplars for few-shot learning"
     )
     parser.add_argument(
+        '--exem_samples_dir',
+        type=str,
+        required=False,
+        help="Directory for exemplar samples"
+    )
+    parser.add_argument(
         '--checkpoint',
         type=str,
         required=True,
@@ -68,9 +74,11 @@ def argument():
         help="Number of classes."
     )
     parser.add_argument(
-        '--label_text',
-        action='store_true',
-        help="Whether there are label specific texts"
+        '--label_texts',
+        type=str,
+        required=False,
+        default="",
+        help="List of label-specific texts to use and to be separated by a comma, needed for clip"
     )
     parser.add_argument(
         '--result_dir',
@@ -85,6 +93,10 @@ def argument():
         help="Whether the dataset is dp or non-dp"
     )
     args = parser.parse_args()
+    if args.label_texts != "":
+        args.label_texts = args.label_texts.split(',')
+    if args.few_shot > 0:
+        assert args.exem_samples_dir is not None, f"{args.few_shot}-shot but no target sample."
     return args
 
 def get_samples(dir: str, modality: str) -> List:
@@ -106,30 +118,28 @@ def get_samples(dir: str, modality: str) -> List:
             data.append(full)     
     return data
 
-def get_texts(config: Dict, label_text: bool) -> List:
+def get_texts(config: Dict, label_text: Optional[List[str]]) -> Union[List, str]:
     """
-    Get a list of text for classification
+    Get either a text or a list of text for classification
 
     Parameters
     ----------
     config:
         text dictionary
-    num_sample:
-        needed when there is no label specific prompt
+    label_text:
+        list of label specific texts
     """
-    texts = []
-    base = config['base']
-    if label_text :
-        for label in config['labels']:
-            text = base.replace('LABEL', label)
-            texts.append(text)
+    if 'base' in config.keys():
+        text = config['base']
     else:
-        texts = base
-    return texts
+        assert label_text is not None, "Either base text or label text must be provided."
+        text = label_text
 
-def predict(samples: List, texts, labels: List[str], device_num: int, model_name: str, checkpoint: str, few_shot: int=0, api_key_path: str=None) -> Dict:
+    return text
+
+def predict(samples: List, texts, labels: List[str], device_num: int, model_name: str, checkpoint: str, modality: str, exem_samples_dir: Optional[str], few_shot: Optional[int] = 0, api_key_path: Optional[str] = None) -> Dict:
     # checkpoint = "openai/clip-vit-large-patch14"
-    
+
     if model_name == 'clip':
         predictions = clip_predict(samples, labels, device_num, checkpoint)
     elif model_name == 'gpt':
@@ -137,28 +147,30 @@ def predict(samples: List, texts, labels: List[str], device_num: int, model_name
     elif model_name == 'bert':
         predictions = bert_predict(samples, labels, device_num, checkpoint)
     elif model_name == 'chatgpt':
+        assert api_key_path is not None, "APi key for chatGPT is needed."
         with open(api_key_path, 'r') as f:
             api_key = f.read()
-        predictions = chatgpt_predict(samples, texts, labels, checkpoint, few_shot, api_key)
+        predictions = chatgpt_predict(samples, modality, exem_samples_dir, texts, labels, checkpoint, api_key, few_shot)
 
     return predictions
 
-def chatgpt_predict(samples: List[str], text: str, labels: List[str], checkpoint: str, few_shot: int=0, key: str=None) -> Dict:
+def chatgpt_predict(samples: List[Union[str, float]], modality: str, exem_samples_dir: Optional[str], text: str, labels: List[str], checkpoint: str, key: str, few_shot: int=0) -> Dict[str, str]:
     openai.api_key = key
-    rng = np.random.default_rng(seed=2023)
-    every = [*range(len(samples))]
-    predictions = {}
-    for idx, sample_path in enumerate(samples):
-        candidate = every.copy()
-        candidate.remove(idx)
-        exem_idx = rng.choice(candidate, few_shot)
-        exemplars = np.array(samples)[exem_idx]
+
+    if few_shot > 0:
+        exem_samples = get_samples(exem_samples_dir, modality)
+        rng = np.random.default_rng(seed=2023)
+        exem_idx = rng.choice(len(exem_samples) - 1, few_shot)
+        exemplars = np.array(exem_samples)[exem_idx]
         exem_prompt = ""
         for exemplar in exemplars:
             with open(exemplar, 'r') as f:
                 exem = f.read()
             label = exemplar.split('/')[-2]
             exem_prompt += f'{exem} : {label}\n'
+
+    predictions = {}
+    for idx, sample_path in enumerate(samples):
         with open(sample_path, 'r') as f:
             sample = f.read()
         unique_label = list(set(labels))
@@ -307,9 +319,9 @@ if __name__ == '__main__':
     samples = get_samples(args.data_dir, args.modality)
     with open(os.path.join(args.data_dir, 'config')) as f:
         config = json.load(f)
-    texts = get_texts(config['texts'], args.label_text)
+    texts = get_texts(config['texts'], args.label_texts)
     if not os.path.exists(file_name):
-        predictions = predict(samples, texts, config['total_labels'], args.device, args.model_name, args.checkpoint, args.few_shot, args.api_key_path)
+        predictions = predict(samples, texts, config['total_labels'], args.device, args.model_name, args.checkpoint, args.modality, args.exem_samples_dir, args.few_shot, args.api_key_path)
     else:
         with open(file_name, 'r') as f:
             predictions = json.load(f)
