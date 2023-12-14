@@ -237,7 +237,7 @@ def parse_args():
                          'variation_degree_schedule should be the same')
 
     api_class = get_api_class_from_name(args.api)
-    api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target)
+    api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.modality)
     return args, api
 
 

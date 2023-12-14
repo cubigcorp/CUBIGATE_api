@@ -87,36 +87,44 @@ class ChatGPTAPI(API):
             num_iterations = int(np.ceil(
                 float(num_samples_for_prompt) / max_batch_size))
 
+            # Load the target file if any
             if self._live == 1:
                 samples, pre_iter = self._live_load(self._live_loading_target)
                 if samples is not None:
                     texts.append(samples)
                     num_iterations -= pre_iter
                 self._live = 0
+                logging.debug(f"Loaded {self._live_loading_target}")
+                logging.debug(f"Start iteration from {iteration}")
+                logging.debug(f"Remaining {num_iterations} iteration")
+
             for iteration in tqdm(range(num_iterations)):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
-
-                prompt = prompt.replace('BATCH', f'{batch_size}')
-                messages = [
-                    {"role": "user", "content": prompt + self.control_prompt }
-                ]
-
-                response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
-                text = [t.strip('\n') for t in response]
-                text = [t for t in text if t][:batch_size]
-                remain = batch_size - len(text)
-                while remain > 0 :
-                    prompt = prompt.replace(f'{batch_size}', f'{remain}')
+                                # For batch computing
+                if 'BATCH' in prompt:
+                    prompt = prompt.replace('BATCH', f'{batch_size}')
+                if self._modality == 'text':
                     messages = [
-                    {"role": "user", "content": prompt + self.control_prompt }
-                ]
+                        {"role": "user", "content": prompt + self.control_prompt }
+                    ]
+
                     response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
-                    temp = [t.strip('\n') for t in response]
-                    text = (text + [t for t in temp if t])[:batch_size]
+                    text = [t.strip('\n') for t in response]
+                    text = [t for t in text if t][:batch_size]
                     remain = batch_size - len(text)
-                texts.append(text)
+                    while remain > 0 :
+                        prompt = prompt.replace(f'{batch_size}', f'{remain}')
+                        messages = [
+                        {"role": "user", "content": prompt + self.control_prompt }
+                    ]
+                        response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
+                        temp = [t.strip('\n') for t in response]
+                        text = (text + [t for t in temp if t])[:batch_size]
+                        remain = batch_size - len(text)
+                    texts.append(text)
+                # 중간 저장을 할 경우
                 if self._live == 0:
                     self._live_save(
                         samples=text,
@@ -170,21 +178,23 @@ class ChatGPTAPI(API):
             logging.debug(f"Loaded {self._live_loading_target}")
             logging.debug(f"Start iteration from {iteration}")
             logging.debug(f"Remaining {num_iterations} iteration")
+
         for iteration in tqdm(range(num_iterations), leave=False):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            logging.debug(f"prompts length: {len(target_samples)}")
-            prompts = "\nEND\n".join(target_samples)
-            prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
-            messages = [
-                    {"role": "user", "content": prompts}
-                ]
-            response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
-            response = response.strip('END').split('END')
-            logging.debug(f"{iteration}_response length: {len(response)}")
-            variation = [r.strip('\n') for r in response]
-            logging.debug(f"{iteration}_variation length: {len(variation)}")
+            logging.debug(f"Number of samples: {len(target_samples)}")
+            if self._modality == 'text':
+                prompts = "\nEND\n".join(target_samples)
+                prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
+                messages = [
+                        {"role": "user", "content": prompts}
+                    ]
+                response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
+                response = response.strip('END').split('END')
+                logging.debug(f"{iteration}_response length: {len(response)}")
+                variation = [r.strip('\n') for r in response]
+                logging.debug(f"{iteration}_variation length: {len(variation)}")
             variations.append(variation)
             if self._live == 0:
                 self._live_save(
