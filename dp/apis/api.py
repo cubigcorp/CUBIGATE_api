@@ -10,7 +10,7 @@ class API(ABC):
         self._result_folder = None
         self._live = -1
         self._live_loading_target = None
-        self._modality
+        self._modality = None
 
     @staticmethod
     def command_line_parser():
