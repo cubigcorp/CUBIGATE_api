@@ -12,12 +12,6 @@ from tqdm import tqdm
 def round_to_uint8(image):
     return np.around(np.clip(image, a_min=0, a_max=255)).astype(np.uint8)
 
-def remove_custom_stats(name):
-
-    if not os.path.exists(name):
-        msg = f"The stats file {name} does not exist."
-        raise Exception(msg)
-    os.remove(name)
 
 
 def cleanfid_make_custom_stats(
@@ -35,7 +29,7 @@ def cleanfid_make_custom_stats(
         f"{name}_{mode}{model_modifier}_{split}_{res}.npz".lower())
     # if the custom stat file already exists
     if os.path.exists(outf):
-        remove_custom_stats(outf)
+        return
     if modality == 'image':
         from cleanfid.fid import get_folder_features
         if model_name == "inception_v3":
