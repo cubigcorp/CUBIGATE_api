@@ -75,7 +75,7 @@ def extract_features(
             feat_model = CLIP_fx_txt("ViT-B/32", device=device)
         elif model_name == "bert_base_nli_mean_tokens":
             from dpsda.text_feature_extractor import BERT_fx_txt, get_files_features
-            bert_fx = BERT_fx_txt("bert-base-nli-mean-tokens", device=device)
+            bert_fx = BERT_fx_txt("base-nli-mean-tokens", device=device)
             feat_model = bert_fx
         else:
             raise Exception(f'Unknown model_name {model_name}')

@@ -10,6 +10,7 @@ from tqdm import tqdm
 import random
 import clip
 from sentence_transformers import SentenceTransformer
+from dpsda.tokenizer import detokenize
 
 def get_folder_features(fdir, modality: str, model=None, num_workers=12, num=None,
                         shuffle=False, seed=0, batch_size=128, device=torch.device("cuda"),
@@ -55,6 +56,7 @@ def get_files_features(l_files, model=None, num_workers=12,
     for batch in pbar:
         if isinstance(batch, list):
             batch = torch.tensor(batch)
+        print(batch.shape)
         l_feats.append(get_batch_features(batch, model, device))
     np_feats = np.concatenate(l_feats)
     return np_feats
@@ -75,11 +77,12 @@ class BERT_fx_txt():
         self.model = SentenceTransformer(name)
         self.model.to(device)
         self.model.eval()
-        self.name = "bert_"+name.lower().replace("-","_").replace("/","_")
-    
-    def __call__(self, txt):
+        self.name = name
+
+    def __call__(self, token):
+        txt = detokenize(self.name, token)
         with torch.no_grad():
-            z = self.model.encode(txt)
+            z = self.model.encode_text(txt)
         return z
 
 
