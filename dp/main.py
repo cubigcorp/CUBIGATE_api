@@ -120,7 +120,7 @@ def parse_args():
         '--feature_extractor',
         type=str,
         default='clip_vit_b_32',
-        choices=['bert_base_nli_mean_tokens', 'inception_v3', 'clip_vit_b_32', 'original'], 
+        choices=['bert_base_nli_mean_tokens', 'all_mpnet_base_v2', 'inception_v3', 'clip_vit_b_32', 'original'], 
         help='Which image feature extractor to use')
     parser.add_argument(
         '--num_nearest_neighbor',

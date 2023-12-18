@@ -167,8 +167,8 @@ def main():
     if args.train:
         generator.train(
             data_folder=args.data_folder,
-            data_checkpoint_path=args.data_checkpoint_path,
-            data_checkpoint_step=args.data_checkpoint_step,
+            checkpoint_path=args.data_checkpoint_path,
+            checkpoint_step=args.data_checkpoint_step,
             initial_prompt=args.initial_prompt,
             num_samples_schedule=args.num_samples_schedule,
             variation_degree_schedule=args.variation_degree_schedule,
