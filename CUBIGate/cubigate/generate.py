@@ -70,18 +70,18 @@ class CubigDPGenerator():
         self,
         api_args,
         data_folder: str,
-        data_checkpoint_path: Optional[str],
-        data_checkpoint_step: Optional[int],
+        checkpoint_path: Optional[str],
+        checkpoint_step: Optional[int],
         initial_prompt: Optional[str],
         num_samples_schedule: List[int],
-        variation_degree_schedule: List[int],
-        lookahead_degree: int,
-        img_size: str,
+        variation_degree_schedule: List[float],
+        lookahead_degree: int, # to remove
+        img_size: str, # to remove
         epsilon: float,
         delta: float,
-        count_threshold: int,
+        count_threshold: int, # to remove
         plot_images: bool=False,
-        nn_mode: str='L2'):
+        nn_mode: str='L2'): # to remove
         """
         Learn the distribution
 
@@ -119,6 +119,7 @@ class CubigDPGenerator():
             Which distance metric to use in DP NN histogram
             
         """
+        print(api_args)
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
 
@@ -145,13 +146,13 @@ class CubigDPGenerator():
         logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
         # 4-a. Load data checkpoint if any
-        if data_checkpoint_path != '':
+        if checkpoint_path != '':
             logging.info(
-                f'Loading data checkpoint from {data_checkpoint_path}')
-            samples, additional_info = load_samples(data_checkpoint_path)
-            if data_checkpoint_step < 0:
+                f'Loading data checkpoint from {checkpoint_path}')
+            samples, additional_info = load_samples(checkpoint_path)
+            if checkpoint_step < 0:
                 raise ValueError('data_checkpoint_step should be >= 0')
-            start_t = data_checkpoint_step + 1
+            start_t = checkpoint_step + 1
         # 4-b. Generate initial population
         else:
             logging.info('Generating initial samples')
@@ -165,7 +166,7 @@ class CubigDPGenerator():
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/{0}',
                 plot_samples=plot_images)
-            if data_checkpoint_step >= 0:
+            if checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step')
             start_t = 1
 
@@ -292,9 +293,9 @@ class CubigDPGenerator():
         base_data: str,
         img_size: str,
         num_samples: int,
-        variation_degree: float,
+        variation_degree: float, # to remove
         plot_images: bool,
-        api_args
+        api_args: Optional[List]
     ):
         """
         Generate images based on the distribution learned
