@@ -125,7 +125,8 @@ class ChatGPTAPI(API):
                         remain = batch_size - len(text)
                     texts.append(text)
                 # 중간 저장을 할 경우
-                if self._live == 0:
+                _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
+                if self._live == 0 and _save:
                     self._live_save(
                         samples=text,
                         additional_info=[f'{iteration} iteration for random sampling'] * len(text),
@@ -157,7 +158,8 @@ class ChatGPTAPI(API):
                 t=t)
 
             variations.append(sub_variations)
-            if self._live == 0:
+            _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
+            if self._live == 0 and _save:
                 self._live_save(
                     samples=sub_variations,
                     additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
@@ -196,7 +198,8 @@ class ChatGPTAPI(API):
                 variation = [r.strip('\n') for r in response]
                 logging.debug(f"{iteration}_variation length: {len(variation)}")
             variations.append(variation)
-            if self._live == 0:
+            _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
+            if self._live == 0 and _save:
                 self._live_save(
                     samples=variation,
                     additional_info=[f'{iteration} iteration for sub-variation'] * len(variation),

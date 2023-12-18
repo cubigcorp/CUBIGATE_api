@@ -11,6 +11,7 @@ class API(ABC):
         self._live = -1
         self._live_loading_target = None
         self._modality = None
+        self._save_freq = 0
 
     @staticmethod
     def command_line_parser():
@@ -21,7 +22,7 @@ class API(ABC):
         return parser
 
     @classmethod
-    def from_command_line_args(cls, args, result_folder, live_loading_target, modality):
+    def from_command_line_args(cls, args, result_folder, live_loading_target, save_samples_live_feq, modality):
         """
         Creating the API from command line arguments.
 
@@ -41,6 +42,7 @@ class API(ABC):
             api._live = 1
             api._live_loading_target = live_loading_target
         api._modality = modality
+        api._save_freq = save_samples_live_feq
         return api
 
     @abstractmethod
