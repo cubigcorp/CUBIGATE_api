@@ -85,7 +85,7 @@ dependencies:
     - clean-fid==0.1.35
     - cli-exit-tools==1.2.6
     - click==8.1.7
-    - clip==1.0
+    - git+https://github.com/openai/CLIP.git
     - cmake==3.27.7
     - contourpy==1.1.1
     - cryptography==41.0.3
