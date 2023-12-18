@@ -7,7 +7,7 @@ def setup_logging(log_file):
              '%(message)s'),
         datefmt='%m/%d/%Y %H:%M:%S %p')
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(logging.INFO)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
