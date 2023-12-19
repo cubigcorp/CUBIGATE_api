@@ -132,9 +132,14 @@ def get_samples(dir: str, modality: str, num: Optional[int]) -> List:
                 continue
             full = os.path.join(root, file)
             data.append(full) 
-            if len(data) == num:
-                break
-    return data
+
+    if num is not None:
+        rng = np.random.default_rng(2023)
+        selected = rng.choice(data, num)
+    else:
+        selected = data
+
+    return selected
 
 def get_texts(config: Dict, label_text: Optional[List[str]]) -> Union[List, str]:
     """
@@ -194,6 +199,7 @@ def chatgpt_predict(samples: List[Union[str, float]], modality: str, exem_sample
         unique_label = list(set(labels))
         label_text = f"Do not use any words other than {', '.join(unique_label[:-1])} or {unique_label[-1]}"
         prompt = f"{text} Answer in one word. {label_text} \n\n{exem_prompt}{sample} : "
+
         message = [
                     {"role": "user", "content": prompt }
                 ]
