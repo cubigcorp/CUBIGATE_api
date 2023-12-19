@@ -423,7 +423,8 @@ def main():
                 num_variations_per_sample=args.lookahead_degree,
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
-                t=t)
+                t=t,
+                lookahead=True)
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:

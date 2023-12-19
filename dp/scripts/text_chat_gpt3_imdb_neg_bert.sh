@@ -30,3 +30,4 @@ python main.py \
 --save_samples_live \
 --epsilon 1.0 \
 --delta 0.0 \
+--save_samples_live_freq 10

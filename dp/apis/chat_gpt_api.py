@@ -136,14 +136,14 @@ class ChatGPTAPI(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None):
+                        num_variations_per_sample, size, variation_degree, t=None, lookahead: bool = True):
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
 
-        if (self._live == 1) and ('sub' not in self._live_loading_target):
+        if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
             sub_variations, iteration = self._live_load(self._live_loading_target)
-            variations.append(sub_variations)
+            variations.extend(sub_variations)
             num_variations_per_sample -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
@@ -155,11 +155,12 @@ class ChatGPTAPI(API):
                 additional_info=list(additional_info),
                 size=size,
                 variation_degree=variation_degree,
-                t=t)
+                t=t,
+                lookahead=lookahead)
 
             variations.append(sub_variations)
             _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
-            if self._live == 0 and _save:
+            if self._live == 0 and _save and lookahead:
                 self._live_save(
                     samples=sub_variations,
                     additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
@@ -167,14 +168,15 @@ class ChatGPTAPI(API):
                 )
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, additional_info, size, variation_degree, t):
+    def _variation(self, samples, additional_info, size, variation_degree, t, lookahead):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
-        if (self._live == 1) and ('sub' in self._live_loading_target):
+        if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
             variation, iteration = self._live_load(self._live_loading_target)
-            variations.append(variation)
+            variations.extend(variation)
+            print(len(variations))
             num_iterations -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
@@ -199,9 +201,9 @@ class ChatGPTAPI(API):
                 logging.info(f"{iteration}_variation length: {len(variation)}")
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
-            if self._live == 0 and _save:
+            if self._live == 0 and _save and lookahead:
                 self._live_save(
-                    samples=variation,
+                    samples=variations,
                     additional_info=[f'{iteration} iteration for sub-variation'] * len(variation),
                     prefix=f'sub_variation_{t}_{iteration}'
                 )
@@ -244,21 +246,21 @@ class ChatGPTAPI(API):
             return None, 0
         samples, _ = load_samples(path)
         iteration = int(path.split('_')[-2])
-        if iteration:
-            sub_samples = samples
-            samples = []
-            samples.append(sub_samples)
-            sub_iteration = iteration
-            while sub_iteration:
-                sub_iteration -= 1
-                dirname = os.path.dirname(path)
-                basename = os.path.basename(path).split("_")[:-2]
-                prev = os.path.join(dirname, f"{basename}_{iteration}_samples.npz")
-                if os.path.exists(prev):
-                    sub_samples, _ = load_samples(prev)
-                    samples.append(sub_samples)
-                else:
-                    return None, 0
+        # if isinstance(iteration, int):
+        #     sub_samples = samples
+        #     samples = []
+        #     samples.append(sub_samples)
+        #     sub_iteration = iteration
+        #     while sub_iteration:
+        #         sub_iteration -= 1
+        #         dirname = os.path.dirname(path)
+        #         basename = os.path.basename(path).split("_")[:-2]
+        #         prev = os.path.join(dirname, f"{basename}_{iteration}_samples.npz")
+        #         if os.path.exists(prev):
+        #             sub_samples, _ = load_samples(prev)
+        #             samples.append(sub_samples)
+        #         else:
+        #             return None, 0
         iteration += 1
                 
         return samples, iteration

@@ -32,4 +32,5 @@ python main.py \
 --delta 0.0 \
 --data_checkpoint_path "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/1/_samples.npz" \
 --data_checkpoint_step 1 \
---live_loading_target "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/sub_variation_2_90_samples.npz"
+--save_samples_live_freq 10 \
+--live_loading_target "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/sub_variation_2_50_samples.npz"
