@@ -11,7 +11,6 @@ python main.py \
 --num_private_samples 100 \
 --initial_prompt "Generate BATCH positive movie reviews as if they were posted on IMDB." \
 --control_prompt "The review does not have a title, a number, or anything other than itself." \
---make_fid_stats True \
 --compute_fid True \
 --num_fid_samples 100 \
 --fid_model_name clip_vit_b_32 \
@@ -30,7 +29,7 @@ python main.py \
 --save_samples_live \
 --epsilon 1.0 \
 --delta 0.0 \
---data_checkpoint_path "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/1/_samples.npz" \
---data_checkpoint_step 1 \
 --save_samples_live_freq 10 \
---live_loading_target "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/sub_variation_2_50_samples.npz"
+--nn_mode cosine \
+--live_loading_target "/mnt/cubigate/minsy/result/IMDB/mpnet/gpt3/positive/variation_1_0_samples.npz"
+# --make_fid_stats True \

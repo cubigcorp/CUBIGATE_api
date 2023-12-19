@@ -17,6 +17,9 @@ def dp_nn_histogram(public_features, private_features, epsilon: float, delta: fl
         index = faiss.IndexFlatL2(public_features.shape[1])
     elif mode == 'IP':
         index = faiss.IndexFlatIP(public_features.shape[1])
+    elif mode == 'cosine':
+        index = faiss.IndexFlatIP(public_features.shape[1])
+        faiss.normalize_L2(public_features)
     else:
         raise Exception(f'Unknown mode {mode}')
     if torch.cuda.is_available():
@@ -25,8 +28,10 @@ def dp_nn_histogram(public_features, private_features, epsilon: float, delta: fl
     index.add(public_features)
     logging.info(f'Number of samples in index: {index.ntotal}')
 
+    # if mode == 'cosine':
+    #     faiss.normalize_L2(private_features)
     distances, ids = index.search(private_features, k=num_nearest_neighbor)
-    logging.debug(f"distances:\n{distances.squeeze()}")
+    logging.info(f"distances:\n{distances.squeeze()}")
     logging.debug(f"ids:\n:{ids.squeeze()}")
     logging.info('Finished search')
     counter = Counter(list(ids.flatten()))

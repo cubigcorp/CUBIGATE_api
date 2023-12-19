@@ -131,7 +131,7 @@ def parse_args():
         '--nn_mode',
         type=str,
         default='L2',
-        choices=['L2', 'IP'],
+        choices=['L2', 'IP', 'cosine'],
         help='Which distance metric to use in DP NN histogram')   ##Bert랑 같이 similarty로 갈지 논의
     parser.add_argument(
         '--private_image_size',
