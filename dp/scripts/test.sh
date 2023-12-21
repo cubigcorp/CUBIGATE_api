@@ -30,4 +30,4 @@ python main.py \
 --epsilon 1.0 \
 --delta 0.0 \
 --save_samples_live_freq 10 \
---demostration 2
+--demonstration 2

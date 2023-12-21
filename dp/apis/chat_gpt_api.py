@@ -182,14 +182,14 @@ class ChatGPTAPI(API):
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {iteration}")
             logging.info(f"Remaining {num_iterations} iteration")
-        logging.info(f"Number of demostrations: {demo}")
+        logging.info(f"Number of demonstrations: {demo}")
         logging.info(f"Number of samples in a batch: {max_batch_size}")
         for iteration in tqdm(range(num_iterations), leave=False):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
 
-            # demostration indices, demo개수만큼 인덱스 나눠놓음
+            # demonstration indices, demo개수만큼 인덱스 나눠놓음
             if demo > 0:
                 demo_indices = np.arange(0, len(target_samples)). reshape(-1, demo)
 

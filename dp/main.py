@@ -59,7 +59,7 @@ def parse_args():
         type=str,
         required=False)
     parser.add_argument(
-        '--demostration',
+        '--demonstration',
         type=int,
         required=False,
         default=0)
@@ -430,7 +430,7 @@ def main():
                 variation_degree=args.variation_degree_schedule[t],
                 t=t,
                 lookahead=True,
-                demo=args.demostration)
+                demo=args.demonstration)
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:
@@ -503,18 +503,18 @@ def main():
                 num_samples_per_class * class_i:
                 num_samples_per_class * (class_i + 1)]
             # 데모가 없으면 클래스별로 정해진 개수를 뽑고 데모가 있으면 그 수만큼 뽑음
-            if args.demostration == 0:
+            if args.demonstration == 0:
                 sub_indices = np.random.choice(
                     np.arange(num_samples_per_class * class_i,
                             num_samples_per_class * (class_i + 1)),
                     size=new_num_samples_per_class,
                     p=sub_count / np.sum(sub_count))
             else:
-                if len(sub_count) < args.demostration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
+                if len(sub_count) < args.demonstration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
                     sub_indices = np.random.choice(
                         np.arange(num_samples_per_class * class_i,
                                 num_samples_per_class * (class_i + 1)),
-                        size=args.demostration * new_num_samples_per_class,
+                        size=args.demonstration * new_num_samples_per_class,
                         p=sub_count / np.sum(sub_count),
                         replace=True)
                 else:  # 그렇지 않으면 각각의 데모는 중복을 허용하지 않고 샘플 개수만큼 반복 선별
@@ -523,7 +523,7 @@ def main():
                         demo_indices = np.random.choice(
                             np.arange(num_samples_per_class * class_i,
                                     num_samples_per_class * (class_i + 1)),
-                            size=args.demostration ,
+                            size=args.demonstration ,
                             p=sub_count / np.sum(sub_count),
                             replace=False)
                         sub_indices.extend(demo_indices)
@@ -540,7 +540,7 @@ def main():
             size=args.image_size,
             variation_degree=args.variation_degree_schedule[t],
             t=t,
-            demo=args.demostration)
+            demo=args.demonstration)
         new_new_samples = np.squeeze(new_new_samples, axis=1)
         new_new_additional_info = new_additional_info
 
