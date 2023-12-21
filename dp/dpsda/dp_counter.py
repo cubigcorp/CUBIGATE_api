@@ -28,8 +28,8 @@ def dp_nn_histogram(public_features, private_features, epsilon: float, delta: fl
     index.add(public_features)
     logging.info(f'Number of samples in index: {index.ntotal}')
 
-    # if mode == 'cosine':
-    #     faiss.normalize_L2(private_features)
+    if mode == 'cosine':
+        faiss.normalize_L2(private_features)
     distances, ids = index.search(private_features, k=num_nearest_neighbor)
     logging.info(f"distances:\n{distances.squeeze()}")
     logging.debug(f"ids:\n:{ids.squeeze()}")

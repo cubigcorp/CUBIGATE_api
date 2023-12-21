@@ -59,6 +59,11 @@ def parse_args():
         type=str,
         required=False)
     parser.add_argument(
+        '--demostration',
+        type=int,
+        required=False,
+        default=0)
+    parser.add_argument(
         '--modality',
         type=str,
         choices=['image', 'text'], #Tabular: text
@@ -424,7 +429,8 @@ def main():
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
                 t=t,
-                lookahead=True)
+                lookahead=True,
+                demo=args.demostration)
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:
@@ -496,14 +502,34 @@ def main():
             sub_count = count[
                 num_samples_per_class * class_i:
                 num_samples_per_class * (class_i + 1)]
-            sub_new_indices = np.random.choice(
-                np.arange(num_samples_per_class * class_i,
-                          num_samples_per_class * (class_i + 1)),
-                size=new_num_samples_per_class,
-                p=sub_count / np.sum(sub_count))
-            new_indices.append(sub_new_indices)
+            # 데모가 없으면 클래스별로 정해진 개수를 뽑고 데모가 있으면 그 수만큼 뽑음
+            if args.demostration == 0:
+                sub_indices = np.random.choice(
+                    np.arange(num_samples_per_class * class_i,
+                            num_samples_per_class * (class_i + 1)),
+                    size=new_num_samples_per_class,
+                    p=sub_count / np.sum(sub_count))
+            else:
+                if len(sub_count) < args.demostration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
+                    sub_indices = np.random.choice(
+                        np.arange(num_samples_per_class * class_i,
+                                num_samples_per_class * (class_i + 1)),
+                        size=args.demostration * new_num_samples_per_class,
+                        p=sub_count / np.sum(sub_count),
+                        replace=True)
+                else:  # 그렇지 않으면 각각의 데모는 중복을 허용하지 않고 샘플 개수만큼 반복 선별
+                    sub_indices = []
+                    for _ in range(num_samples_per_class):
+                        demo_indices = np.random.choice(
+                            np.arange(num_samples_per_class * class_i,
+                                    num_samples_per_class * (class_i + 1)),
+                            size=args.demostration ,
+                            p=sub_count / np.sum(sub_count),
+                            replace=False)
+                        sub_indices.extend(demo_indices)
+            new_indices.append(sub_indices)
         new_indices = np.concatenate(new_indices)
-        new_samples = samples[new_indices]
+        new_samples = samples[new_indices]  # 데모가 아닐 경우 -> 스케줄된 샘플 개수 / 데모일 경우 -> 스케줄된 샘플 개수 * 데모 개수
         new_additional_info = additional_info[new_indices]
         logging.debug(f"new_indices: {new_indices}")
         logging.info('Generating new samples')
@@ -513,7 +539,8 @@ def main():
             num_variations_per_sample=1,
             size=args.image_size,
             variation_degree=args.variation_degree_schedule[t],
-            t=t)
+            t=t,
+            demo=args.demostration)
         new_new_samples = np.squeeze(new_new_samples, axis=1)
         new_new_additional_info = new_additional_info
 

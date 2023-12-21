@@ -110,7 +110,7 @@ class ChatGPTAPI(API):
                         {"role": "user", "content": prompt + self.control_prompt }
                     ]
 
-                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
+                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('--').split('--')
                     text = [t.strip('\n') for t in response]
                     text = [t for t in text if t][:batch_size]
                     remain = batch_size - len(text)
@@ -119,7 +119,7 @@ class ChatGPTAPI(API):
                         messages = [
                         {"role": "user", "content": prompt + self.control_prompt }
                     ]
-                        response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('END').split('END')
+                        response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('--').split('--')
                         temp = [t.strip('\n') for t in response]
                         text = (text + [t for t in temp if t])[:batch_size]
                         remain = batch_size - len(text)
@@ -136,27 +136,28 @@ class ChatGPTAPI(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, lookahead: bool = True):
+                        num_variations_per_sample, size, variation_degree, t=None, lookahead: bool = True, demo=0):
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
 
         if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
             sub_variations, iteration = self._live_load(self._live_loading_target)
-            variations.extend(sub_variations)
+            variations.append(sub_variations)
             num_variations_per_sample -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {iteration}")
             logging.info(f"Remaining {num_variations_per_sample} iteration")
-        for iteration in tqdm(range(num_variations_per_sample)):
+        for iteration in tqdm(range(num_variations_per_sample), leave=False):
             sub_variations = self._variation(
                 samples=samples,
                 additional_info=list(additional_info),
                 size=size,
                 variation_degree=variation_degree,
                 t=t,
-                lookahead=lookahead)
+                lookahead=lookahead,
+                demo=demo)
 
             variations.append(sub_variations)
             _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
@@ -168,34 +169,44 @@ class ChatGPTAPI(API):
                 )
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, additional_info, size, variation_degree, t, lookahead):
-        max_batch_size = self._variation_batch_size
+    def _variation(self, samples, additional_info, size, variation_degree, t, lookahead, demo):
+        max_batch_size = self._variation_batch_size * demo if demo > 0 else self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
         if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
             variation, iteration = self._live_load(self._live_loading_target)
             variations.extend(variation)
-            print(len(variations))
             num_iterations -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {iteration}")
             logging.info(f"Remaining {num_iterations} iteration")
-
+        logging.info(f"Number of demostrations: {demo}")
+        logging.info(f"Number of samples in a batch: {max_batch_size}")
         for iteration in tqdm(range(num_iterations), leave=False):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            logging.info(f"Number of samples: {len(target_samples)}")
+
+            # demostration indices, demo개수만큼 인덱스 나눠놓음
+            if demo > 0:
+                demo_indices = np.arange(0, len(target_samples)). reshape(-1, demo)
+
             if self._modality == 'text':
-                prompts = "\nEND\n".join(target_samples)
-                prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
+                if demo > 0 :
+                    # Prepare emostrations
+                    demo_prompts = "\n--\n".join(target_samples[demo_indices.flatten()])
+                    prompts = f"{demo_prompts}\n{self.variation_prompt}"
+                else:
+                    prompts = "\n--\n".join(target_samples)
+                    prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
+                    
                 messages = [
                         {"role": "user", "content": prompts}
                     ]
                 response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
-                response = response.strip('END').split('END')
+                response = response.strip('--').split('--')
                 logging.info(f"{iteration}_response length: {len(response)}")
                 variation = [r.strip('\n') for r in response]
                 logging.info(f"{iteration}_variation length: {len(variation)}")
@@ -221,7 +232,7 @@ class ChatGPTAPI(API):
                   stop=stop,
                   temperature=temperature)
         time.sleep(sleep)
-        # generated = response.choices[0].message.content.strip('END').split('END')
+        # generated = response.choices[0].message.content.strip('--').split('--')
         # text = []
         # for temp in generated:
         #     temp = temp.strip('\n')
@@ -246,21 +257,7 @@ class ChatGPTAPI(API):
             return None, 0
         samples, _ = load_samples(path)
         iteration = int(path.split('_')[-2])
-        # if isinstance(iteration, int):
-        #     sub_samples = samples
-        #     samples = []
-        #     samples.append(sub_samples)
-        #     sub_iteration = iteration
-        #     while sub_iteration:
-        #         sub_iteration -= 1
-        #         dirname = os.path.dirname(path)
-        #         basename = os.path.basename(path).split("_")[:-2]
-        #         prev = os.path.join(dirname, f"{basename}_{iteration}_samples.npz")
-        #         if os.path.exists(prev):
-        #             sub_samples, _ = load_samples(prev)
-        #             samples.append(sub_samples)
-        #         else:
-        #             return None, 0
+
         iteration += 1
                 
         return samples, iteration

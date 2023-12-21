@@ -74,7 +74,7 @@ class API(ABC):
 
     @abstractmethod
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree=None, t=None):
+                        num_variations_per_sample, size, variation_degree=None, t=None, demo=0):
         """
         Generates a specified number of variations for each image in the input
         array.
