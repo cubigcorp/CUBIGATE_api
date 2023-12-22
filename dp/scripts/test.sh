@@ -4,18 +4,18 @@ python main.py \
 --feature_extractor all_mpnet_base_v2 \
 --count_threshold 2.0 \
 --noise_multiplier 1.0 \
---lookahead_degree 0 \
+--lookahead_degree 2 \
 --data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
---num_samples_schedule 100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100 \
---variation_degree_schedule 1.0,0.98,0.96,0.94,0.92,0.88,0.84,0.8,0.76,0.72,0.68,0.64,0.6,0.56,0.52,0.48,0.44,0.4 \
---num_private_samples 100 \
+--num_samples_schedule 10,10 \
+--variation_degree_schedule 1.0,0.98 \
+--num_private_samples 10 \
 --initial_prompt "Generate BATCH positive movie reviews as if they were posted on IMDB." \
 --control_prompt "The review is identified with '--' and does not have a title, a number, or anything other than itself." \
---compute_fid true \
---num_fid_samples 100 \
+--compute_fid false \
+--num_fid_samples 10 \
 --fid_model_name clip_vit_b_32 \
 --fid_dataset_name imdb_pos \
---result_folder /mnt/cubigate/minsy/result/IMDB/test/positive \
+--result_folder /mnt/cubigate/minsy/result/IMDB/direct/positive \
 --tmp_folder /tmp/IMDB/pos/chatgpt3 \
 --api chatgpt \
 --random_sampling_checkpoint gpt-3.5-turbo-1106 \
@@ -23,11 +23,12 @@ python main.py \
 --variation_checkpoint gpt-3.5-turbo-1106 \
 --variation_batch_size 1 \
 --api_key keys/minsy.key \
---variation_prompt_path prompts/text_demo_chatgpt.txt \
+--variation_prompt_path prompts/text_variation_chatgpt.txt \
 --use_public_data true \
 --public_data_folder /mnt/cubigate/minsy/dp_data/IMDB/public/positive \
 --save_samples_live \
 --epsilon 1.0 \
 --delta 0.0 \
---save_samples_live_freq 10 \
---demonstration 2
+--save_samples_live_freq 1 \
+--direct_variate true \
+--live_loading_target "/mnt/cubigate/minsy/result/IMDB/direct/positive/variation_1_1_samples.npz"

@@ -22,10 +22,16 @@ from dpsda.agm import get_epsilon
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        '--direct_variate',
+        type=str2bool,
+        required=False,
+        help="Whether to use lookahead variations"
+    )
+    parser.add_argument(
         '--use_public_data',
         type=str2bool,
         default=False,
-        help="Whether there is public data")
+        help="Whether to use public data")
     parser.add_argument(
         '--public_data_folder',
         type=str,
@@ -431,6 +437,7 @@ def main():
                 t=t,
                 lookahead=True,
                 demo=args.demonstration)
+            print(packed_samples.shape)
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:
@@ -455,7 +462,14 @@ def main():
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
-        packed_features = np.mean(packed_features, axis=0)
+        if args.direct_variate:  #Lookahead로 생성한 variation을 사용할 경우
+            print(len(packed_features))
+            packed_features = np.stack(packed_features, axis=1)
+            print(packed_features.shape)
+        else:  # 기존 DPSDA
+            packed_features = np.mean(packed_features, axis=0)
+        import sys
+        sys.exit()
         logging.info('Computing histogram')
         count = []
         for class_i, class_ in enumerate(private_classes):
