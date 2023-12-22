@@ -41,4 +41,5 @@
 1. `--save_samples_live` 추가하여 중간 결과물을 저장하도록 설정
    * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{lookahead}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
 2. `--live_loading_target`으로 불러올 중간 결과물의 경로 지정
-   * 불러올 중간 결과물이 없다면 필요 없음 
+   * 불러올 중간 결과물이 없다면 필요 없음
+3. `--save_samples_live_freq`로 저장 주기(배치 단위) 설정
