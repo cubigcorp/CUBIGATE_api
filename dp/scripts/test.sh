@@ -31,4 +31,4 @@ python main.py \
 --delta 0.0 \
 --save_samples_live_freq 1 \
 --direct_variate true \
---live_loading_target "/mnt/cubigate/minsy/result/IMDB/direct/positive/variation_1_1_samples.npz"
+--live_loading_target /mnt/cubigate/minsy/result/IMDB/direct/positive/variation_1_1_samples.npz

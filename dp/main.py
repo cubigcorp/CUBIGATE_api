@@ -437,7 +437,6 @@ def main():
                 t=t,
                 lookahead=True,
                 demo=args.demonstration)
-            print(packed_samples.shape)
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:
@@ -462,14 +461,13 @@ def main():
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
-        if args.direct_variate:  #Lookahead로 생성한 variation을 사용할 경우
-            print(len(packed_features))
+        if args.direct_variate:  # Lookahead로 생성한 variation을 사용할 경우
+            # packed_features shape: (N_syn, lookahead_degree, embedding)
             packed_features = np.stack(packed_features, axis=1)
-            print(packed_features.shape)
         else:  # 기존 DPSDA
+            # packed_features shape: (N_syn, embedding)
             packed_features = np.mean(packed_features, axis=0)
-        import sys
-        sys.exit()
+
         logging.info('Computing histogram')
         count = []
         for class_i, class_ in enumerate(private_classes):
@@ -486,7 +484,8 @@ def main():
                 mode=args.nn_mode,
                 threshold=args.count_threshold,
                 t=t,
-                result_folder=args.result_folder)
+                result_folder=args.result_folder,
+                direct_variate=args.direct_variate)
             log_count(
                 sub_count,
                 sub_clean_count,
@@ -511,52 +510,71 @@ def main():
         assert args.num_samples_schedule[t] % private_num_classes == 0
         new_num_samples_per_class = (
             args.num_samples_schedule[t] // private_num_classes)
-        new_indices = []
-        for class_i in private_classes:
-            sub_count = count[
-                num_samples_per_class * class_i:
-                num_samples_per_class * (class_i + 1)]
-            # 데모가 없으면 클래스별로 정해진 개수를 뽑고 데모가 있으면 그 수만큼 뽑음
-            if args.demonstration == 0:
-                sub_indices = np.random.choice(
-                    np.arange(num_samples_per_class * class_i,
-                            num_samples_per_class * (class_i + 1)),
-                    size=new_num_samples_per_class,
-                    p=sub_count / np.sum(sub_count))
-            else:
-                if len(sub_count) < args.demonstration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
+
+        if args.direct_variate:
+            selected = []
+            for class_i in private_classes:
+                sub_count = count[
+                    num_samples_per_class * class_i:
+                    num_samples_per_class * (class_i + 1)]
+                for i in range(sub_count.shape[0]):
+                    indices = np.random.choice(
+                        np.arange(args.lookahead_degree),
+                        size=1,
+                        p = sub_count[i] / np.sum(sub_count[i])
+                    )
+                    selected.append(indices)
+            selected = np.concatenate(selected)
+            logging.info(f"Selected candiates: {selected}")
+            new_new_samples = packed_samples[np.arange(packed_samples.shape[0]), selected]
+            new_new_additional_info = additional_info
+        else:
+            new_indices = []
+            for class_i in private_classes:
+                sub_count = count[
+                    num_samples_per_class * class_i:
+                    num_samples_per_class * (class_i + 1)]
+                # 데모가 없으면 클래스별로 정해진 개수를 뽑고 데모가 있으면 그 수만큼 뽑음
+                if args.demonstration == 0:
                     sub_indices = np.random.choice(
                         np.arange(num_samples_per_class * class_i,
                                 num_samples_per_class * (class_i + 1)),
-                        size=args.demonstration * new_num_samples_per_class,
-                        p=sub_count / np.sum(sub_count),
-                        replace=True)
-                else:  # 그렇지 않으면 각각의 데모는 중복을 허용하지 않고 샘플 개수만큼 반복 선별
-                    sub_indices = []
-                    for _ in range(num_samples_per_class):
-                        demo_indices = np.random.choice(
+                        size=new_num_samples_per_class,
+                        p=sub_count / np.sum(sub_count))
+                else:
+                    if len(sub_count) < args.demonstration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
+                        sub_indices = np.random.choice(
                             np.arange(num_samples_per_class * class_i,
                                     num_samples_per_class * (class_i + 1)),
-                            size=args.demonstration ,
+                            size=args.demonstration * new_num_samples_per_class,
                             p=sub_count / np.sum(sub_count),
-                            replace=False)
-                        sub_indices.extend(demo_indices)
-            new_indices.append(sub_indices)
-        new_indices = np.concatenate(new_indices)
-        new_samples = samples[new_indices]  # 데모가 아닐 경우 -> 스케줄된 샘플 개수 / 데모일 경우 -> 스케줄된 샘플 개수 * 데모 개수
-        new_additional_info = additional_info[new_indices]
-        logging.debug(f"new_indices: {new_indices}")
-        logging.info('Generating new samples')
-        new_new_samples = api.variation(
-            samples=new_samples,
-            additional_info=new_additional_info,
-            num_variations_per_sample=1,
-            size=args.image_size,
-            variation_degree=args.variation_degree_schedule[t],
-            t=t,
-            demo=args.demonstration)
-        new_new_samples = np.squeeze(new_new_samples, axis=1)
-        new_new_additional_info = new_additional_info
+                            replace=True)
+                    else:  # 그렇지 않으면 각각의 데모는 중복을 허용하지 않고 샘플 개수만큼 반복 선별
+                        sub_indices = []
+                        for _ in range(num_samples_per_class):
+                            demo_indices = np.random.choice(
+                                np.arange(num_samples_per_class * class_i,
+                                        num_samples_per_class * (class_i + 1)),
+                                size=args.demonstration ,
+                                p=sub_count / np.sum(sub_count),
+                                replace=False)
+                            sub_indices.extend(demo_indices)
+                new_indices.append(sub_indices)
+            new_indices = np.concatenate(new_indices)
+            new_samples = samples[new_indices]  # 데모가 아닐 경우 -> 스케줄된 샘플 개수 / 데모일 경우 -> 스케줄된 샘플 개수 * 데모 개수
+            new_additional_info = additional_info[new_indices]
+            logging.debug(f"new_indices: {new_indices}")
+            logging.info('Generating new samples')
+            new_new_samples = api.variation(
+                samples=new_samples,
+                additional_info=new_additional_info,
+                num_variations_per_sample=1,
+                size=args.image_size,
+                variation_degree=args.variation_degree_schedule[t],
+                t=t,
+                demo=args.demonstration)
+            new_new_samples = np.squeeze(new_new_samples, axis=1)
+            new_new_additional_info = new_additional_info
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')

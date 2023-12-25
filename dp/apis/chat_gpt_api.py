@@ -143,7 +143,7 @@ class ChatGPTAPI(API):
 
         if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
             sub_variations, iteration = self._live_load(self._live_loading_target)
-            variations.append(sub_variations)
+            variations.extend(sub_variations)
             num_variations_per_sample -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
@@ -163,7 +163,7 @@ class ChatGPTAPI(API):
 
             if self._live == 0 and lookahead:
                 self._live_save(
-                    samples=sub_variations,
+                    samples=variations,
                     additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
                     prefix=f'variation_{t}_{iteration}'
                 )
