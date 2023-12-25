@@ -143,7 +143,7 @@ class ChatGPTAPI(API):
 
         if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
             sub_variations, iteration = self._live_load(self._live_loading_target)
-            variations.append(sub_variations)
+            variations.extend(sub_variations)
             num_variations_per_sample -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
@@ -160,20 +160,21 @@ class ChatGPTAPI(API):
                 demo=demo)
 
             variations.append(sub_variations)
-            _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
-            if self._live == 0 and _save and lookahead:
+
+            if self._live == 0 and lookahead:
                 self._live_save(
-                    samples=sub_variations,
+                    samples=variations,
                     additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
                     prefix=f'variation_{t}_{iteration}'
                 )
         return np.stack(variations, axis=1)
 
     def _variation(self, samples, additional_info, size, variation_degree, t, lookahead, demo):
-        max_batch_size = self._variation_batch_size * demo if demo > 0 else self._variation_batch_size
+        max_batch_size = self._variation_batch_size
+        max_batch_size_w_demo = self._variation_batch_size * demo if demo > 0 else self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
-            float(samples.shape[0]) / max_batch_size))
+            float(samples.shape[0]) / max_batch_size_w_demo))
         if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
             variation, iteration = self._live_load(self._live_loading_target)
             variations.extend(variation)
@@ -183,10 +184,10 @@ class ChatGPTAPI(API):
             logging.info(f"Start iteration from {iteration}")
             logging.info(f"Remaining {num_iterations} iteration")
         logging.info(f"Number of demonstrations: {demo}")
-        logging.info(f"Number of samples in a batch: {max_batch_size}")
+        logging.info(f"Number of samples in a batch: {max_batch_size_w_demo}")
         for iteration in tqdm(range(num_iterations), leave=False):
-            start_idx = iteration * max_batch_size
-            end_idx = (iteration + 1) * max_batch_size
+            start_idx = iteration * max_batch_size_w_demo
+            end_idx = (iteration + 1) * max_batch_size_w_demo
             target_samples = samples[start_idx:end_idx]
 
             # demonstration indices, demo개수만큼 인덱스 나눠놓음
@@ -210,6 +211,9 @@ class ChatGPTAPI(API):
                 logging.info(f"{iteration}_response length: {len(response)}")
                 variation = [r.strip('\n') for r in response]
                 logging.info(f"{iteration}_variation length: {len(variation)}")
+                if len(variation) > max_batch_size:
+                    indices = np.arange(max_batch_size)
+                    variation = variation[indices]
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
             if self._live == 0 and _save and lookahead:
@@ -232,12 +236,6 @@ class ChatGPTAPI(API):
                   stop=stop,
                   temperature=temperature)
         time.sleep(sleep)
-        # generated = response.choices[0].message.content.strip('--').split('--')
-        # text = []
-        # for temp in generated:
-        #     temp = temp.strip('\n')
-        #     if temp is not None:
-        #         text.append(temp)
 
         
         return response.choices[0].message.content
@@ -257,8 +255,6 @@ class ChatGPTAPI(API):
             return None, 0
         samples, _ = load_samples(path)
         iteration = int(path.split('_')[-2])
-
         iteration += 1
-                
         return samples, iteration
         
