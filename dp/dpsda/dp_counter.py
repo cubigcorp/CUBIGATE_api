@@ -2,23 +2,20 @@ import faiss
 import logging
 import numpy as np
 from collections import Counter
+from typing import Dict, Optional
 import torch
 from dpsda.agm import get_sigma
 
-def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, total_vote: int, top_winner_ratio: float, index: faiss.Index) -> np.ndarray:
+def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index: faiss.Index) -> np.ndarray:
     logging.info("Losers' revival started")
     loser_idx = [[*range(idx * dim, (idx + 1) * dim)] for idx in range(counts.shape[0]) if np.all(counts[idx] == 0)]
     counts = counts.flatten()
     sorted_idx = np.flip(np.argsort(counts))
     winner_idx = [idx for idx in sorted_idx if counts[idx] > 0]
-    top_winner = np.round(top_winner_ratio * total_vote).astype(int)
-    logging.info(f"Selected {top_winner} winners out of {len(winner_idx)} winners")
-    winner_idx = winner_idx[:top_winner]
     logging.info(f"Selected winners indices : {winner_idx}")
 
-    shares = np.round(total_vote * counts[winner_idx] / sum(counts[winner_idx]))
-    winner_idx = np.concatenate([np.repeat(winner_idx[idx], shares[idx]) for idx in range(len(winner_idx))])
-    logging.info(f"Winners' share:{shares}")
+    shares = counts[winner_idx]
+    logging.info(f"Winners' weights: {shares}")
     logging.info(f"Total vote: {sum(shares)}")
     losers = synthetic_features[loser_idx].reshape((-1, dim, synthetic_features.shape[-1]))
     winners = synthetic_features[winner_idx]
@@ -29,7 +26,8 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, total_
     for loser in losers:
         index.add(loser)
         _, ids = index.search(winners, k=1)
-        count = get_count(ids, dim, verbose=0)
+        weights = get_weights(ids.flatten(), shares)
+        count = get_count(ids, dim, verbose=0, weights=weights)
         loser_counts.append(count)
         index.reset()
     loser_counts = np.stack(loser_counts)
@@ -40,12 +38,20 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, total_
     counts[loser_idx] = loser_counts
     return counts
 
+def get_weights(ids: np.ndarray, share: np.ndarray) -> Dict:
+    weights = dict.fromkeys(np.unique(ids), 0)
+
+    for idx in range(ids.shape[0]):
+        weights[ids[idx]] += share[idx]
+    return weights
+        
 
 
-def get_count(ids: np.ndarray, num_candidate: int, verbose: int = 1) -> np.ndarray:
+def get_count(ids: np.ndarray, num_candidate: int, verbose: int, weights: Optional[np.ndarray]=None) -> np.ndarray:
     counter = Counter(list(ids.flatten()))
     count = np.zeros(shape=num_candidate)
     for k in counter:
+        vote = counter[k] if weights is None else count[k] * weights[k]
         count[k % num_candidate] += counter[k]
         if verbose == 1:
             logging.debug(f"count[{k}]: {count[k]}")
@@ -84,7 +90,7 @@ def dp_nn_histogram(synthetic_features, private_features, epsilon: float, delta:
                     threshold=0.0, t=None, result_folder: str=None, dim: int = 0, top_winner_ratio: float = 0.1):
     # public_features shape: (Nsyn * lookahead, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
-    np.set_printoptions(100)
+    np.set_printoptions(precision=3)
     assert synthetic_features.shape[0] % num_packing == 0
     num_true_public_features = synthetic_features.shape[0] // num_packing
     faiss_res = faiss.StandardGpuResources()
@@ -108,7 +114,7 @@ def dp_nn_histogram(synthetic_features, private_features, epsilon: float, delta:
     logging.info(f'Number of samples in index: {index.ntotal}')
 
     _, ids = index.search(private_features, k=num_nearest_neighbor)
-    counts = get_count(ids, synthetic_features.shape[0])
+    counts = get_count(ids, synthetic_features.shape[0], verbose=1)
     clean_count = counts.copy()
     counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, dim)
     logging.info(f'Noisy count sum: {np.sum(counts)}')
@@ -126,11 +132,8 @@ def dp_nn_histogram(synthetic_features, private_features, epsilon: float, delta:
             counts=counts,
             synthetic_features=synthetic_features,
             dim=dim,
-            total_vote=private_features.shape[0],
-            top_winner_ratio=top_winner_ratio,
             index=index)
         assert sanity_check(counts)
-
     return counts, clean_count
 
 
