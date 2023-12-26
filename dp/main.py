@@ -437,6 +437,7 @@ def main():
                 t=t,
                 lookahead=True,
                 demo=args.demonstration)
+            num_samples_per_class *= args.lookahead_degree
         if args.modality == 'text':
             packed_tokens = []
             for packed_sample in packed_samples:
@@ -462,8 +463,8 @@ def main():
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
         if args.direct_variate:  # Lookahead로 생성한 variation을 사용할 경우
-            # packed_features shape: (N_syn, lookahead_degree, embedding)
-            packed_features = np.stack(packed_features, axis=1)
+            # packed_features shape: (N_syn * lookahead_degree, embedding)
+            packed_features = np.concatenate(packed_features, axis=0)
         else:  # 기존 DPSDA
             # packed_features shape: (N_syn, embedding)
             packed_features = np.mean(packed_features, axis=0)
@@ -472,7 +473,7 @@ def main():
         count = []
         for class_i, class_ in enumerate(private_classes):
             sub_count, sub_clean_count = dp_nn_histogram(
-                public_features=packed_features[
+                synthetic_features=packed_features[
                     num_samples_per_class * class_i:
                     num_samples_per_class * (class_i + 1)],
                 private_features=all_private_features[
@@ -485,7 +486,7 @@ def main():
                 threshold=args.count_threshold,
                 t=t,
                 result_folder=args.result_folder,
-                direct_variate=args.direct_variate)
+                dim=args.lookahead_degree)
             log_count(
                 sub_count,
                 sub_clean_count,
