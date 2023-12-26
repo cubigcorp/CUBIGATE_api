@@ -35,7 +35,7 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, total_
     loser_counts = np.stack(loser_counts)
     logging.info(f"Counts for losers: {loser_counts}")
 
-    loser_idx = [idx[0] // 3 for idx in loser_idx]
+    loser_idx = [idx[0] // dim for idx in loser_idx]
     counts = counts.reshape((-1, dim))
     counts[loser_idx] = loser_counts
     return counts
