@@ -86,19 +86,18 @@ class ChatGPTAPI(API):
             num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
             num_iterations = int(np.ceil(
                 float(num_samples_for_prompt) / max_batch_size))
-
+            start_iter = 0
             # Load the target file if any
             if self._live == 1:
-                samples, pre_iter = self._live_load(self._live_loading_target)
+                samples, start_iter = self._live_load(self._live_loading_target)
                 if samples is not None:
                     texts.append(samples)
-                    num_iterations -= pre_iter
                 self._live = 0
                 logging.info(f"Loaded {self._live_loading_target}")
-                logging.info(f"Start iteration from {iteration}")
+                logging.info(f"Start iteration from {start_iter}")
                 logging.info(f"Remaining {num_iterations} iteration")
 
-            for iteration in tqdm(range(num_iterations)):
+            for iteration in tqdm(range(start_iter, num_iterations)):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
@@ -107,10 +106,16 @@ class ChatGPTAPI(API):
                     prompt = prompt.replace('BATCH', f'{batch_size}')
                 if self._modality == 'text':
                     messages = [
+                        {"role": "system", "content": "If you are unable to fulfil the request, do not say anything other than 'ERROR'"},
                         {"role": "user", "content": prompt + self.control_prompt }
                     ]
 
-                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('--').split('--')
+                    response = self._generate(model=self._random_sampling_checkpoint, messages=messages)
+                    if 'ERROR' in response:
+                        iteration -= 1
+                        continue
+                    if batch_size > 1:
+                        response = response.strip('--').split('--')
                     text = [t.strip('\n') for t in response]
                     text = [t for t in text if t][:batch_size]
                     remain = batch_size - len(text)
@@ -119,7 +124,9 @@ class ChatGPTAPI(API):
                         messages = [
                         {"role": "user", "content": prompt + self.control_prompt }
                     ]
-                        response = self._generate(model=self._random_sampling_checkpoint, messages=messages).strip('--').split('--')
+                        response = self._generate(model=self._random_sampling_checkpoint, messages=messages)
+                        if batch_size > 1 :
+                            response = response.strip('--').split('--')
                         temp = [t.strip('\n') for t in response]
                         text = (text + [t for t in temp if t])[:batch_size]
                         remain = batch_size - len(text)
@@ -141,21 +148,22 @@ class ChatGPTAPI(API):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
 
+        start_iter = 0
         if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
-            sub_variations, iteration = self._live_load(self._live_loading_target)
+            sub_variations, start_iter = self._live_load(self._live_loading_target)
             variations.extend(sub_variations)
-            num_variations_per_sample -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
-            logging.info(f"Start iteration from {iteration}")
+            logging.info(f"Start iteration from {start_iter}")
             logging.info(f"Remaining {num_variations_per_sample} iteration")
-        for iteration in tqdm(range(num_variations_per_sample), leave=False):
+        for iteration in tqdm(range(start_iter, num_variations_per_sample), leave=False):
             sub_variations = self._variation(
                 samples=samples,
                 additional_info=list(additional_info),
                 size=size,
                 variation_degree=variation_degree,
                 t=t,
+                l=iteration,
                 lookahead=lookahead,
                 demo=demo)
 
@@ -169,23 +177,24 @@ class ChatGPTAPI(API):
                 )
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, additional_info, size, variation_degree, t, lookahead, demo):
+    def _variation(self, samples, additional_info, size, variation_degree, t, l, lookahead, demo):
         max_batch_size = self._variation_batch_size
         max_batch_size_w_demo = self._variation_batch_size * demo if demo > 0 else self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size_w_demo))
+        start_iter = 0
         if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
-            variation, iteration = self._live_load(self._live_loading_target)
+            variation, start_iter = self._live_load(self._live_loading_target)
             variations.extend(variation)
             num_iterations -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
-            logging.info(f"Start iteration from {iteration}")
+            logging.info(f"Start iteration from {start_iter}")
             logging.info(f"Remaining {num_iterations} iteration")
         logging.info(f"Number of demonstrations: {demo}")
         logging.info(f"Number of samples in a batch: {max_batch_size_w_demo}")
-        for iteration in tqdm(range(num_iterations), leave=False):
+        for iteration in tqdm(range(start_iter, num_iterations), leave=False):
             start_idx = iteration * max_batch_size_w_demo
             end_idx = (iteration + 1) * max_batch_size_w_demo
             target_samples = samples[start_idx:end_idx]
@@ -204,23 +213,27 @@ class ChatGPTAPI(API):
                     prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
                     
                 messages = [
+                        {"role": "system", "content": "If you are unable to fulfil the request, do not say anything other than 'ERROR'"},
                         {"role": "user", "content": prompts}
                     ]
                 response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
-                response = response.strip('--').split('--')
+                if 'ERROR' in response:
+                    iteration -= 1
+                    continue
+                if max_batch_size > 1 :
+                    response = response.strip('--').split('--')
+                else:
+                    response = [response]
                 logging.info(f"{iteration}_response length: {len(response)}")
                 variation = [r.strip('\n') for r in response]
                 logging.info(f"{iteration}_variation length: {len(variation)}")
-                if len(variation) > max_batch_size:
-                    indices = np.arange(max_batch_size)
-                    variation = variation[indices]
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
             if self._live == 0 and _save and lookahead:
                 self._live_save(
                     samples=variations,
                     additional_info=[f'{iteration} iteration for sub-variation'] * len(variation),
-                    prefix=f'sub_variation_{t}_{iteration}'
+                    prefix=f'sub_variation_{t}_{l}_{iteration}'
                 )
         variations = np.concatenate(variations, axis=0)
 
