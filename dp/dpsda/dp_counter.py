@@ -9,6 +9,9 @@ from dpsda.agm import get_sigma
 def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index: faiss.Index) -> np.ndarray:
     logging.info("Losers' revival started")
     loser_idx = [[*range(idx * dim, (idx + 1) * dim)] for idx in range(counts.shape[0]) if np.all(counts[idx] == 0)]
+    logging.info(f"Total losers: {len(loser_idx)}")
+    if len(loser_idx) == 0:
+        return counts
     counts = counts.flatten()
     sorted_idx = np.flip(np.argsort(counts))
     winner_idx = [idx for idx in sorted_idx if counts[idx] > 0]
@@ -21,7 +24,6 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index:
     winners = synthetic_features[winner_idx]
 
     logging.info(f"Counting votes for {len(losers)} losers")
-
     loser_counts = []
     for loser in losers:
         index.add(loser)
