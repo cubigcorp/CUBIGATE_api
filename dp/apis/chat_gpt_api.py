@@ -302,7 +302,7 @@ class ChatGPTAPI(API):
         question,
         num_return_sequences=1,
         temperature=0.7,
-        max_length=128
+        max_length=2048
     ):
         input_ids = self.tokenizer(
             f'paraphrase: {question}',

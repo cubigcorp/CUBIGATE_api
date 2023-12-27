@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from .api import API
 from transformers import AutoTokenizer
-from transformers import LlamaForCausalLM
+import transformers
 import gc
 from typing import List
 from dpsda.data_logger import log_samples
@@ -22,8 +22,18 @@ class ChatLlama2API(API):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
-        self._random_sampling_api = LlamaForCausalLM.from_pretrained(random_sampling_checkpoint)
-
+        self._random_sampling_api = transformers.pipeline(
+            "text-generation",
+            model = random_sampling_checkpoint,
+            device=api_device,
+            do_sample=True,
+            top_k=top_k,
+            num_return_sequences=1,
+            eos_token_id=self.tokenizer.eos_token_id,
+            tokenizer=self.tokenizer
+        )
+        self.random_flag = '\n'
+        self.variation_flag = 'Above is a document. Paraphrase it while keeping its basic structure.'
         self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
         
         self._random_sampling_batch_size = random_sampling_batch_size
@@ -128,10 +138,9 @@ class ChatLlama2API(API):
     def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None):
         with torch.no_grad():
             if variation:
-                generated = self._variation_api(prompts, temperature=variation_degree, early_stopping=True)
-                response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+                response = self._variation_api(prompts, batch_size=batch_size, temperature=variation_degree)
             else:
-                response = self._random_sampling_api(prompts, early_stopping=True)
+                response = self._random_sampling_api(prompts, batch_size=batch_size)
         
         responses = [r[0]['generated_text'] for r in response]
         # prompt가 대답에 그대로 나타날 경우 제거
