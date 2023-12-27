@@ -6,7 +6,7 @@ from wrapt_timeout_decorator import timeout
 from typing import Dict, List
 from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
-import os
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 import logging
 import time
 # from dpsda.pytorch_utils import dev
@@ -18,8 +18,11 @@ class ChatGPTAPI(API):
                  variation_checkpoint,
                  variation_batch_size,
                  api_key,
+                 api_device,
                  variation_prompt_path,
                  control_prompt,
+                 use_auxiliary_model,
+                 auxiliary_model_checkpoint,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
@@ -34,21 +37,40 @@ class ChatGPTAPI(API):
         with open(variation_prompt_path, 'r') as f:
             self.variation_prompt = f.read()
         self.control_prompt = control_prompt
+        if use_auxiliary_model:
+            self.use_auxiliary_model = use_auxiliary_model
+            self.device = f"cuda:{api_device}"
+            self.auxiliary_model = AutoModelForSeq2SeqLM.from_pretrained(auxiliary_model_checkpoint).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(auxiliary_model_checkpoint)
 
     @staticmethod
     def command_line_parser():
         parser = super(
             ChatGPTAPI, ChatGPTAPI).command_line_parser()
         parser.add_argument(
+            '--use_auxiliary_model',
+            action='store_true'
+        )
+        parser.add_argument(
+            '--auxiliary_model_checkpoint',
+            type=str,
+            required=False
+        )
+        parser.add_argument(
+            '--api_device',
+            type=int,
+            required=False
+        )
+        parser.add_argument(
             '--api_key',
             type=str,
             required=True,
-            help='The path to the checkpoint for random sampling API')
+            help='The path to the key for chatGPT API')
         parser.add_argument(
             '--control_prompt',
             type=str,
             required=False,
-            help='The path to the checkpoint for random sampling API')
+            help='Control prompt for random sampling API')
         parser.add_argument(
             '--random_sampling_checkpoint',
             type=str,
@@ -96,26 +118,25 @@ class ChatGPTAPI(API):
                 logging.info(f"Loaded {self._live_loading_target}")
                 logging.info(f"Start iteration from {start_iter}")
                 logging.info(f"Remaining {num_iterations} iteration")
+            idx = start_iter
 
-            for iteration in tqdm(range(start_iter, num_iterations)):
+            while idx < num_iterations :
                 batch_size = min(
                     max_batch_size,
-                    num_samples_for_prompt - iteration * max_batch_size)
+                    num_samples_for_prompt - idx * max_batch_size)
                                 # For batch computing
                 if 'BATCH' in prompt:
                     prompt = prompt.replace('BATCH', f'{batch_size}')
                 if self._modality == 'text':
                     messages = [
-                        {"role": "system", "content": "If you are unable to fulfil the request, do not say anything other than 'ERROR'"},
                         {"role": "user", "content": prompt + self.control_prompt }
                     ]
 
                     response = self._generate(model=self._random_sampling_checkpoint, messages=messages)
-                    if 'ERROR' in response:
-                        iteration -= 1
-                        continue
                     if batch_size > 1:
                         response = response.strip('--').split('--')
+                    else:
+                        response = [response]
                     text = [t.strip('\n') for t in response]
                     text = [t for t in text if t][:batch_size]
                     remain = batch_size - len(text)
@@ -132,13 +153,14 @@ class ChatGPTAPI(API):
                         remain = batch_size - len(text)
                     texts.append(text)
                 # 중간 저장을 할 경우
-                _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
+                _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)
                 if self._live == 0 and _save:
                     self._live_save(
                         samples=text,
-                        additional_info=[f'{iteration} iteration for random sampling'] * len(text),
-                        prefix=f'initial_{iteration}'
+                        additional_info=[f'{idx} iteration for random sampling'] * len(text),
+                        prefix=f'initial_{idx}'
                     )
+                idx += 1
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
@@ -156,14 +178,15 @@ class ChatGPTAPI(API):
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {start_iter}")
             logging.info(f"Remaining {num_variations_per_sample} iteration")
-        for iteration in tqdm(range(start_iter, num_variations_per_sample), leave=False):
+        idx = start_iter
+        while idx < num_variations_per_sample:
             sub_variations = self._variation(
                 samples=samples,
                 additional_info=list(additional_info),
                 size=size,
                 variation_degree=variation_degree,
                 t=t,
-                l=iteration,
+                l=idx,
                 lookahead=lookahead,
                 demo=demo)
 
@@ -172,9 +195,10 @@ class ChatGPTAPI(API):
             if self._live == 0 and lookahead:
                 self._live_save(
                     samples=variations,
-                    additional_info=[f'{iteration} iteration for {t} variation'] * len(sub_variations),
-                    prefix=f'variation_{t}_{iteration}'
+                    additional_info=[f'{idx} iteration for {t} variation'] * len(sub_variations),
+                    prefix=f'variation_{t}_{idx}'
                 )
+            idx += 1
         return np.stack(variations, axis=1)
 
     def _variation(self, samples, additional_info, size, variation_degree, t, l, lookahead, demo):
@@ -187,16 +211,17 @@ class ChatGPTAPI(API):
         if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
             variation, start_iter = self._live_load(self._live_loading_target)
             variations.extend(variation)
-            num_iterations -= iteration
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {start_iter}")
             logging.info(f"Remaining {num_iterations} iteration")
         logging.info(f"Number of demonstrations: {demo}")
         logging.info(f"Number of samples in a batch: {max_batch_size_w_demo}")
-        for iteration in tqdm(range(start_iter, num_iterations), leave=False):
-            start_idx = iteration * max_batch_size_w_demo
-            end_idx = (iteration + 1) * max_batch_size_w_demo
+        idx = start_iter
+    
+        while idx < num_iterations:
+            start_idx = idx * max_batch_size_w_demo
+            end_idx = (idx + 1) * max_batch_size_w_demo
             target_samples = samples[start_idx:end_idx]
 
             # demonstration indices, demo개수만큼 인덱스 나눠놓음
@@ -204,40 +229,40 @@ class ChatGPTAPI(API):
                 demo_indices = np.arange(0, len(target_samples)). reshape(-1, demo)
 
             if self._modality == 'text':
-                if demo > 0 :
-                    # Prepare emostrations
-                    demo_prompts = "\n--\n".join(target_samples[demo_indices.flatten()])
-                    prompts = f"{demo_prompts}\n{self.variation_prompt}"
+                if self.use_auxiliary_model:
+                    response = self._paraphrase(question=target_samples, temperature=variation_degree)
                 else:
-                    prompts = "\n--\n".join(target_samples)
-                    prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
-                    
-                messages = [
-                        {"role": "system", "content": "If you are unable to fulfil the request, do not say anything other than 'ERROR'"},
-                        {"role": "user", "content": prompts}
-                    ]
-                response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
-                if 'ERROR' in response:
-                    iteration -= 1
-                    continue
-                if max_batch_size > 1 :
-                    response = response.strip('--').split('--')
-                else:
-                    response = [response]
-                logging.info(f"{iteration}_response length: {len(response)}")
+                    if demo > 0 :
+                        # Prepare emostrations
+                        demo_prompts = "\n--\n".join(target_samples[demo_indices.flatten()])
+                        prompts = f"{demo_prompts}\n{self.variation_prompt}"
+                    else:
+                        prompts = "\n--\n".join(target_samples)
+                        prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
+
+                    messages = [
+                            {"role": "user", "content": prompts}
+                        ]
+                    response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
+                    if max_batch_size > 1 :
+                        response = response.strip('--').split('--')
+                    else:
+                        response = [response]
+                logging.info(f"{idx}_response length: {len(response)}")
                 variation = [r.strip('\n') for r in response]
-                logging.info(f"{iteration}_variation length: {len(variation)}")
+                logging.info(f"{idx}_variation length: {len(variation)}")
             variations.append(variation)
-            _save = (self._save_freq < np.inf) and (iteration % self._save_freq == 0)
+            _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)
             if self._live == 0 and _save and lookahead:
                 self._live_save(
                     samples=variations,
-                    additional_info=[f'{iteration} iteration for sub-variation'] * len(variation),
-                    prefix=f'sub_variation_{t}_{l}_{iteration}'
+                    additional_info=[f'{idx} iteration for sub-variation'] * len(variation),
+                    prefix=f'sub_variation_{t}_{l}_{idx}'
                 )
+            idx += 1
         variations = np.concatenate(variations, axis=0)
 
-        logging.info(f"{iteration}_final shape: {variations.shape}")
+        logging.info(f"{idx}_final shape: {variations.shape}")
         return variations
     
     @timeout(1000)
@@ -271,3 +296,25 @@ class ChatGPTAPI(API):
         iteration += 1
         return samples, iteration
         
+
+    def _paraphrase(
+        self,
+        question,
+        num_return_sequences=1,
+        temperature=0.7,
+        max_length=128
+    ):
+        input_ids = self.tokenizer(
+            f'paraphrase: {question}',
+            return_tensors="pt", padding="longest",
+            max_length=max_length,
+            truncation=True,
+        ).input_ids
+        input_ids = input_ids.to(self.device)
+        
+        outputs = self.auxiliary_model.generate(
+            input_ids, temperature=temperature, num_return_sequences=num_return_sequences, do_sample=True)
+
+        res = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+        return res
