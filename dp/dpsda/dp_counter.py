@@ -18,7 +18,7 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index:
     logging.info(f"Selected winners indices : {winner_idx}")
 
     shares = counts[winner_idx]
-    logging.info(f"Winners' weights: {shares}")
+    logging.info(f"Winners' shares: {shares}")
     logging.info(f"Total vote: {sum(shares)}")
     losers = synthetic_features[loser_idx].reshape((-1, dim, synthetic_features.shape[-1]))
     winners = synthetic_features[winner_idx]
@@ -29,6 +29,7 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index:
         index.add(loser)
         _, ids = index.search(winners, k=1)
         weights = get_weights(ids.flatten(), shares)
+        logging.info(f"Weights for vote: {weights}")
         count = get_count(ids, dim, verbose=0, weights=weights)
         loser_counts.append(count)
         index.reset()
@@ -39,6 +40,7 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index:
     counts = counts.reshape((-1, dim))
     counts[loser_idx] = loser_counts
     return counts
+
 
 def get_weights(ids: np.ndarray, share: np.ndarray) -> Dict:
     weights = dict.fromkeys(np.unique(ids), 0)
@@ -53,7 +55,7 @@ def get_count(ids: np.ndarray, num_candidate: int, verbose: int, weights: Option
     counter = Counter(list(ids.flatten()))
     count = np.zeros(shape=num_candidate)
     for k in counter:
-        vote = counter[k] if weights is None else count[k] * weights[k]
+        vote = counter[k] if weights is None else counter[k] * weights[k]
         count[k % num_candidate] += vote
         if verbose == 1:
             logging.debug(f"count[{k}]: {count[k]}")
