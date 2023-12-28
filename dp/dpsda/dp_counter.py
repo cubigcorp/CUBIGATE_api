@@ -55,7 +55,7 @@ def get_count(ids: np.ndarray, num_candidate: int, verbose: int, weights: Option
     counter = Counter(list(ids.flatten()))
     count = np.zeros(shape=num_candidate)
     for k in counter:
-        vote = counter[k] if weights is None else counter[k] * weights[k]
+        vote = counter[k] if weights is None else weights[k]
         count[k % num_candidate] += vote
         if verbose == 1:
             logging.debug(f"count[{k}]: {count[k]}")
