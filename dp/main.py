@@ -72,7 +72,7 @@ def parse_args():
     parser.add_argument(
         '--modality',
         type=str,
-        choices=['image', 'text'], #Tabular: text
+        choices=['image', 'text', 'time-series'], #Tabular: text
         required=True)
     parser.add_argument(
         '--api',
@@ -394,7 +394,7 @@ def main():
 
     if args.compute_fid:
         logging.info(f'Computing {metric}')
-        if args.modality == 'text':
+        if args.modality == 'text' or args.modality == 'time-series':
                 tokens = [tokenize(args.fid_model_name, sample) for sample in samples]
                 tokens = np.array(tokens)
         else:
@@ -437,14 +437,17 @@ def main():
                 t=t,
                 lookahead=True,
                 demo=args.demonstration)
-            num_samples_per_class *= args.lookahead_degree
-        if args.modality == 'text':
+            if args.direct_variate:
+                num_samples_per_class *= args.lookahead_degree
+            
+        if args.modality == 'text' or args.modality == 'time-series':
             packed_tokens = []
             for packed_sample in packed_samples:
                 tokens = [tokenize(args.feature_extractor, t) for t in packed_sample]
                 sub_tokens = np.array(tokens)
                 packed_tokens.append(sub_tokens)
             packed_tokens = np.array(packed_tokens)
+        
         else:
             packed_tokens = packed_samples
         packed_features = []
@@ -472,6 +475,7 @@ def main():
         logging.info('Computing histogram')
         count = []
         for class_i, class_ in enumerate(private_classes):
+            dim = args.lookahead_degree if args.direct_variate else 0
             sub_count, sub_clean_count = dp_nn_histogram(
                 synthetic_features=packed_features[
                     num_samples_per_class * class_i:
@@ -486,7 +490,7 @@ def main():
                 threshold=args.count_threshold,
                 t=t,
                 result_folder=args.result_folder,
-                dim=args.lookahead_degree)
+                dim=dim)
             log_count(
                 sub_count,
                 sub_clean_count,
@@ -542,6 +546,7 @@ def main():
                                 num_samples_per_class * (class_i + 1)),
                         size=new_num_samples_per_class,
                         p=sub_count / np.sum(sub_count))
+                    
                 else:
                     if len(sub_count) < args.demonstration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
                         sub_indices = np.random.choice(
@@ -579,7 +584,7 @@ def main():
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')
-            if args.modality == 'text':
+            if args.modality == 'text' or args.modality == 'time-series':
                 new_new_tokens = [tokenize(args.fid_model_name, sample) for sample in new_new_samples]
                 new_new_tokens = np.array(new_new_tokens)
             else:
