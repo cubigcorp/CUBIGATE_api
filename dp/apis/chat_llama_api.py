@@ -25,7 +25,7 @@ class ChatLlama2API(API):
         super().__init__(*args, **kwargs)
         self._tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
         self._random_sampling_api = transformers.pipeline(
-            "conversation",
+            "text-generation",
             model = random_sampling_checkpoint,
             device=api_device,
             do_sample=True,
@@ -180,12 +180,13 @@ class ChatLlama2API(API):
                 response = self._random_sampling_api(prompts, batch_size=batch_size)
         
         responses = [r[0]['generated_text'] for r in response]
-        # assistance 부분 찾기
-        flag = 'assistant: '
-        indices = [text.find(flag) for text in responses]
-        striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
-        # None인 경우 제거
-        texts = [text for text in striped if text]
+        # prompt가 대답에 그대로 나타날 경우 제거
+        # flag = self._variation_prompt if variation else self.random_flag
+        # flag = 'Here is a review'
+        # indices = [text.find(flag) for text in responses]
+        # striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        # # None인 경우 제거
+        # texts = [text for text in striped if text]
         # Sanity Check
         checks = self._sanity_check(responses, self._goal, variation)
         texts = [responses[idx] for idx in range(len(responses)) if checks[idx]]
