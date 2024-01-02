@@ -32,7 +32,8 @@ class ChatLlama2API(API):
             top_k=top_k,
             num_return_sequences=1,
             eos_token_id=self._tokenizer.eos_token_id,
-            tokenizer=self._tokenizer
+            tokenizer=self._tokenizer,
+            max_length=4096
         )
         self._goal = goal
         self._control_prompt = control_prompt
@@ -45,7 +46,7 @@ class ChatLlama2API(API):
             self._variation_api = self._random_sampling_api
         else:
             self._variation_api = transformers.pipeline(
-            "text-generation",
+            "coversational",
             model = variation_checkpoint,
             device=api_device,
             do_sample=True,
@@ -161,14 +162,14 @@ class ChatLlama2API(API):
 
 
     def _sanity_check(self, generated: str, goal: str, variation: bool) -> List[bool]:
-        prompts = [f"Is {gen} {goal}? Answer only with 'Yes' or 'No' without any further explanation" for gen in generated]
+        prompts = [[{"role":"user", "content":f"Is {gen} {goal} and does it comply with '{self._control_prompt}'? Answer only with 'Yes' or 'No' without any further explanation"}] for gen in generated]
         with torch.no_grad():
             if variation: 
                 response = self._variation_api(prompts, batch_size=len(prompts))
             else:
                 response = self._random_sampling_api(prompts, batch_size=len(prompts))
     
-        responses = ['Yes' in r[0]['generated_text'] for r in response]
+        responses = ['Yes' in str(r) for r in response]
         return responses
 
 
@@ -180,11 +181,14 @@ class ChatLlama2API(API):
             else:
                 response = self._random_sampling_api(messages, batch_size=batch_size)
         
-        responses = [r[0]['generated_text'] for r in response]
+        if not isinstance(response, list):
+            response = [response]
+        responses = [str(r) for r in response]
         # prompt가 대답에 그대로 나타날 경우 제거
-        flag = 'assistant'
+        flag = 'assistant: '
         indices = [text.find(flag) for text in responses]
-        striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        striped = [text[idx+len(flag):].strip(' ') for text, idx in zip(responses, indices) if idx >= 0]
+        print(striped)
         # None인 경우 제거
         texts = [text for text in striped if text]
         # Sanity Check
