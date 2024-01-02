@@ -32,4 +32,4 @@ python main.py \
 --delta 0.0 \
 --api_device 2 \
 --use_auxiliary_model \
---auxiliary_model_checkpoint humarin/chatgpt_paraphraser_on_T5_base
+--auxiliary_model_checkpoint mistralai/Mistral-7B-Instruct-v0.1

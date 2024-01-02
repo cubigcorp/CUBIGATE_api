@@ -1,0 +1,32 @@
+python main.py \
+--device 2 \
+--modality text \
+--feature_extractor clip_vit_b_32 \
+--count_threshold 2.0 \
+--lookahead_degree 8 \
+--data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
+--num_samples_schedule 100,100,100 \
+--variation_degree_schedule 1.0,0.98,0.96 \
+--num_private_samples 100 \
+--initial_prompt "Generate a positive movie reviews as if it were posted on IMDB: " \
+--control_prompt "Please don't include any unnecessary details. The review should consist solely of its content, without a title, number, or anything else beyond the review itself." \
+--goal "positive movie review" \
+--make_fid_stats true \
+--compute_fid true \
+--num_fid_samples 100 \
+--fid_model_name clip_vit_b_32 \
+--fid_dataset_name imdb_pos \
+--result_folder /mnt/cubigate/minsy/result/IMDB/public_seed/positive \
+--tmp_folder /tmp/IMDB/pos/llama2 \
+--api chat_llama2 \
+--random_sampling_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--random_sampling_batch_size 1 \
+--variation_checkpoint meta-llama/Llama-2-7b-chat-hf \
+--variation_batch_size 1 \
+--use_public_data true \
+--public_data_folder /mnt/cubigate/minsy/dp_data/IMDB/public/train/positive \
+--direct_variate true \
+--epsilon 1.0 \
+--delta 0.0 \
+--api_device 2 \
+--variation_prompt_path prompts/text_variation_llama2_v.0.1.txt \

@@ -14,14 +14,16 @@ from dpsda.data_loader import load_samples
 class ChatLlama2API(API):
     def __init__(self, random_sampling_checkpoint,
                  random_sampling_batch_size,
-                 max_seq_len,
                  top_k,
                  variation_checkpoint,
+                 variation_prompt_path,
                  variation_batch_size,
                  api_device,
+                 control_prompt,
+                 goal,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
+        self._tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
         self._random_sampling_api = transformers.pipeline(
             "text-generation",
             model = random_sampling_checkpoint,
@@ -29,33 +31,56 @@ class ChatLlama2API(API):
             do_sample=True,
             top_k=top_k,
             num_return_sequences=1,
-            eos_token_id=self.tokenizer.eos_token_id,
-            tokenizer=self.tokenizer
+            eos_token_id=self._tokenizer.eos_token_id,
+            tokenizer=self._tokenizer
         )
-        self.random_flag = '\n'
-        self.variation_flag = 'Above is a document. Paraphrase it while keeping its basic structure.'
-        self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
+        self._goal = goal
+        self._control_prompt = control_prompt
+
+        self._tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
         
         self._random_sampling_batch_size = random_sampling_batch_size
 
-        self._variation_api = self._random_sampling_api
+        if variation_checkpoint == random_sampling_checkpoint:
+            self._variation_api = self._random_sampling_api
+        else:
+            self._variation_api = transformers.pipeline(
+            "text-generation",
+            model = variation_checkpoint,
+            device=api_device,
+            do_sample=True,
+            top_k=top_k,
+            num_return_sequences=1,
+            eos_token_id=self._tokenizer.eos_token_id,
+            tokenizer=self._tokenizer
+        )
         self._variation_batch_size = variation_batch_size
-
-        #self._variation_pipe = self._variation_pipe.to(dev())
+        with open(variation_prompt_path, 'r') as f:
+            self._variation_prompt = f.read()
 
     @staticmethod
     def command_line_parser():
         parser = super(
             ChatLlama2API, ChatLlama2API).command_line_parser()
         parser.add_argument(
-            '--max_seq_len',
-            type=int,
-            required=True,
-            help='The path to the checkpoint for random sampling API')
+            '--variation_prompt_path',
+            type=str,
+            required=True
+        )
+        parser.add_argument(
+            '--control_prompt',
+            type=str
+        )
+        parser.add_argument(
+            '--goal',
+            type=str,
+            help="The description of what to generate"
+        )
         parser.add_argument(
             '--top_k',
             type=int,
-            required=True,
+            required=False,
+            default=1,
             help='The path to the checkpoint for random sampling API')
         parser.add_argument(
             '--api_device',
@@ -100,7 +125,7 @@ class ChatLlama2API(API):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
-                text = self._generate([prompt] * batch_size, batch_size=batch_size, variation=False)
+                text = self._generate([f'{prompt} {self._control_prompt}'] * batch_size, batch_size=batch_size, variation=False)
                 texts.append(text)
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -108,7 +133,7 @@ class ChatLlama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None):
+                        num_variations_per_sample, size, variation_degree, t=None, lookahead=True, demo=0):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
@@ -126,13 +151,25 @@ class ChatLlama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [sample + f"\n\n{self.variation_flag}" for sample in target_samples]
+            prompts = [sample + f"\n\n{self._variation_prompt}" for sample in target_samples]
             variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
             gc.collect()
         variations = np.concatenate(variations, axis=0)
         return variations
+
+
+    def _sanity_check(self, generated: str, goal: str, variation: bool) -> List[bool]:
+        prompts = [f"Is {gen} {goal}? Answer only with 'Yes' or 'No' without any further explanation" for gen in generated]
+        with torch.no_grad():
+            if variation: 
+                response = self._variation_api(prompts, batch_size=len(prompts))
+            else:
+                response = self._random_sampling_api(prompts, batch_size=len(prompts))
+    
+        responses = ['Yes' in r[0]['generated_text'] for r in response]
+        return responses
 
 
     def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None):
@@ -144,11 +181,15 @@ class ChatLlama2API(API):
         
         responses = [r[0]['generated_text'] for r in response]
         # prompt가 대답에 그대로 나타날 경우 제거
-        flag = self.variation_flag if variation else self.random_flag
-        indices = [text.find(flag) for text in responses]
-        striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
-        # None인 경우 제거
-        texts = [text for text in striped if text]
+        # flag = self._variation_prompt if variation else self.random_flag
+        # flag = 'Here is a review'
+        # indices = [text.find(flag) for text in responses]
+        # striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        # # None인 경우 제거
+        # texts = [text for text in striped if text]
+        # Sanity Check
+        checks = self._sanity_check(responses, self._goal, variation)
+        texts = [responses[idx] for idx in range(len(responses)) if checks[idx]]
         # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
         while remain:

@@ -6,7 +6,7 @@ from wrapt_timeout_decorator import timeout
 from typing import Dict, List
 from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import logging
 import time
 # from dpsda.pytorch_utils import dev
@@ -23,10 +23,12 @@ class ChatGPTAPI(API):
                  control_prompt,
                  use_auxiliary_model,
                  auxiliary_model_checkpoint,
+                 verbose,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
         self._random_sampling_batch_size = random_sampling_batch_size
+        self.verbose = verbose
         with open(api_key, 'r') as f:
             openai.api_key = f.read()
 
@@ -40,13 +42,18 @@ class ChatGPTAPI(API):
         if use_auxiliary_model:
             self.use_auxiliary_model = use_auxiliary_model
             self.device = f"cuda:{api_device}"
-            self.auxiliary_model = AutoModelForSeq2SeqLM.from_pretrained(auxiliary_model_checkpoint).to(self.device)
             self.tokenizer = AutoTokenizer.from_pretrained(auxiliary_model_checkpoint)
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.auxiliary_model = AutoModelForCausalLM.from_pretrained(auxiliary_model_checkpoint).to(self.device)
 
     @staticmethod
     def command_line_parser():
         parser = super(
             ChatGPTAPI, ChatGPTAPI).command_line_parser()
+        parser.add_argument(
+            '--verbose',
+            action='store_true'
+        )
         parser.add_argument(
             '--use_auxiliary_model',
             action='store_true'
@@ -230,7 +237,8 @@ class ChatGPTAPI(API):
 
             if self._modality == 'text':
                 if self.use_auxiliary_model:
-                    response = self._paraphrase(question=target_samples, temperature=variation_degree)
+                    prompts = [f'<s>[INST] Paraphrase: {sample} [/INST]' for sample in target_samples]
+                    response = self._paraphrase(prompts=prompts, temperature=variation_degree)
                 else:
                     if demo > 0 :
                         # Prepare emostrations
@@ -248,9 +256,10 @@ class ChatGPTAPI(API):
                         response = response.strip('--').split('--')
                     else:
                         response = [response]
-                logging.info(f"{idx}_response length: {len(response)}")
                 variation = [r.strip('\n') for r in response]
-                logging.info(f"{idx}_variation length: {len(variation)}")
+                if self.verbose:
+                    logging.info(f"{idx}_response length: {len(response)}")
+                    logging.info(f"{idx}_variation length: {len(variation)}")
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)
             if self._live == 0 and _save and lookahead:
@@ -299,21 +308,21 @@ class ChatGPTAPI(API):
 
     def _paraphrase(
         self,
-        question,
+        prompts,
         num_return_sequences=1,
         temperature=0.7,
         max_length=2048
     ):
         input_ids = self.tokenizer(
-            f'paraphrase: {question}',
-            return_tensors="pt", padding="longest",
+            prompts,
+            return_tensors="pt", padding="max_length",
             max_length=max_length,
             truncation=True,
         ).input_ids
         input_ids = input_ids.to(self.device)
         
         outputs = self.auxiliary_model.generate(
-            input_ids, temperature=temperature, num_return_sequences=num_return_sequences, do_sample=True)
+            input_ids, temperature=temperature, num_return_sequences=num_return_sequences, pad_token_id=self.tokenizer.eos_token_id, do_sample=True, max_new_tokens=2048)
 
         res = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 

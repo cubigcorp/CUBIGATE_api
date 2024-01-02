@@ -4,25 +4,24 @@ from tqdm import tqdm
 from .api import API
 from transformers import AutoTokenizer
 from transformers import LlamaForCausalLM
-import gc
+import gc, os
 from typing import List
 from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
 # from dpsda.pytorch_utils import dev
 
 
-class ChatLlama2API(API):
+class Llama2API(API):
     def __init__(self, random_sampling_checkpoint,
                  random_sampling_batch_size,
-                 max_seq_len,
-                 top_k,
                  variation_checkpoint,
                  variation_batch_size,
                  api_device,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.device = f'cuda:{api_device}'
         self.tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
-        self._random_sampling_api = LlamaForCausalLM.from_pretrained(random_sampling_checkpoint)
+        self._random_sampling_api = LlamaForCausalLM.from_pretrained(random_sampling_checkpoint).to(self.device)
 
         self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
         
@@ -36,17 +35,7 @@ class ChatLlama2API(API):
     @staticmethod
     def command_line_parser():
         parser = super(
-            ChatLlama2API, ChatLlama2API).command_line_parser()
-        parser.add_argument(
-            '--max_seq_len',
-            type=int,
-            required=True,
-            help='The path to the checkpoint for random sampling API')
-        parser.add_argument(
-            '--top_k',
-            type=int,
-            required=True,
-            help='The path to the checkpoint for random sampling API')
+            Llama2API, Llama2API).command_line_parser()
         parser.add_argument(
             '--api_device',
             type=int,
@@ -98,7 +87,7 @@ class ChatLlama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None):
+                        num_variations_per_sample, size, variation_degree, t=None, lookahead=None, demo=None):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
@@ -116,7 +105,7 @@ class ChatLlama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [sample + f"\n\n{self.variation_flag}" for sample in target_samples]
+            prompts = [f'Paraphrase: {sample}' for sample in target_samples]
             variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
@@ -125,19 +114,25 @@ class ChatLlama2API(API):
         return variations
 
 
-    def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None):
+    def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None, max_length: int=2048):
+        input_ids = self.tokenizer(
+            prompts,
+            return_tensors="pt", padding="max_length",
+            max_length=max_length,
+            truncation=True,
+        ).input_ids
+        input_ids = input_ids.to(self.device)
         with torch.no_grad():
             if variation:
-                generated = self._variation_api(prompts, temperature=variation_degree, early_stopping=True)
+                generated = self._variation_api(input_ids, temperature=variation_degree, early_stopping=True)
                 response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             else:
-                response = self._random_sampling_api(prompts, early_stopping=True)
-        
-        responses = [r[0]['generated_text'] for r in response]
+                generated = self._random_sampling_api(input_ids, early_stopping=True)
+                response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
         # prompt가 대답에 그대로 나타날 경우 제거
-        flag = self.variation_flag if variation else self.random_flag
-        indices = [text.find(flag) for text in responses]
-        striped = [text[idx+len(flag):].strip('\n') for text, idx in zip(responses, indices) if idx >= 0]
+        indices = [text.find(prompt) for text, prompt in zip(response, prompts)]
+        striped = [response[i][indices[i]+len(prompts[i]):].strip('\n') for i in range(batch_size) if indices[i] >= 0]
         # None인 경우 제거
         texts = [text for text in striped if text]
         # 정해진 개수만큼 만들어지지 않은 경우

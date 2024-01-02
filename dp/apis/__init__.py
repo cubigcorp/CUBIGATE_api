@@ -21,6 +21,9 @@ def get_api_class_from_name(name):
     elif name == 'chat_llama2':
         from .chat_llama_api import ChatLlama2API
         return ChatLlama2API
+    elif name == 'llama2':
+        from .llama_api import Llama2API
+        return Llama2API
     else:
         raise ValueError(f'Unknown API name {name}')
 
