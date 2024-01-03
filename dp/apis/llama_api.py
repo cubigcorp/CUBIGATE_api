@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from .api import API
 from transformers import AutoTokenizer
-from transformers import LlamaForCausalLM
+from transformers import AutoModelForCausalLM
 import gc, os
 from typing import List
 from dpsda.data_logger import log_samples
@@ -17,25 +17,29 @@ class Llama2API(API):
                  variation_checkpoint,
                  variation_batch_size,
                  api_device,
+                 goal,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.device = f'cuda:{api_device}'
         self.tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
-        self._random_sampling_api = LlamaForCausalLM.from_pretrained(random_sampling_checkpoint).to(self.device)
+        self._random_sampling_api = AutoModelForCausalLM.from_pretrained(random_sampling_checkpoint).to(self.device)
 
         self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
-        
+        self.goal = goal
         self._random_sampling_batch_size = random_sampling_batch_size
 
         self._variation_api = self._random_sampling_api
         self._variation_batch_size = variation_batch_size
 
-        #self._variation_pipe = self._variation_pipe.to(dev())
 
     @staticmethod
     def command_line_parser():
         parser = super(
             Llama2API, Llama2API).command_line_parser()
+        parser.add_argument(
+            '--goal',
+            type=str
+        )
         parser.add_argument(
             '--api_device',
             type=int,
@@ -79,7 +83,7 @@ class Llama2API(API):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
-                text = self._generate([prompt] * batch_size, batch_size=batch_size, variation=False)
+                text = self._generate([f'[INST]\n{prompt}\n[\INST]\n\n'] * batch_size, batch_size=batch_size, variation=False)
                 texts.append(text)
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -92,11 +96,12 @@ class Llama2API(API):
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
-                variation_degree=variation_degree)
+                variation_degree=variation_degree,
+                additional_info=additional_info)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, variation_degree):
+    def _variation(self, samples, variation_degree, additional_info):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
@@ -105,7 +110,7 @@ class Llama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [f'Paraphrase: {sample}' for sample in target_samples]
+            prompts = [f'[INST]\n{initial} based on {sample}: \n[\INST]\n\n' for sample, initial in zip(target_samples, additional_info)]
             variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
@@ -114,7 +119,19 @@ class Llama2API(API):
         return variations
 
 
-    def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None, max_length: int=2048):
+    def _sanity_check(self, generated: List[str], goal: str, variation: bool) -> List[bool]:
+            prompts = [f'[INST]\nAnswer if {gen} is {goal} only with "Yes" or "No" without any further explanation.\n[\INST]\n\n' for gen in generated]
+            with torch.no_grad():
+                if variation: 
+                    response = self._variation_api(prompts, batch_size=len(prompts))
+                else:
+                    response = self._random_sampling_api(prompts, batch_size=len(prompts))
+        
+            responses = ['Yes' in str(r) for r in response]
+            return responses
+
+
+    def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None, max_length: int=4096):
         input_ids = self.tokenizer(
             prompts,
             return_tensors="pt", padding="max_length",
@@ -130,11 +147,17 @@ class Llama2API(API):
                 generated = self._random_sampling_api(input_ids, early_stopping=True)
                 response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
+        if not isinstance(response, list):
+            response = [response]
+
         # prompt가 대답에 그대로 나타날 경우 제거
         indices = [text.find(prompt) for text, prompt in zip(response, prompts)]
         striped = [response[i][indices[i]+len(prompts[i]):].strip('\n') for i in range(batch_size) if indices[i] >= 0]
         # None인 경우 제거
-        texts = [text for text in striped if text]
+        texts = [text for text in striped if text is not None]
+        # Filtering
+        filter = self._sanity_check(texts, self.goal, variation)
+        texts = [texts[idx] for idx in range(len(texts)) if filter[idx]]
         # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
         while remain:
