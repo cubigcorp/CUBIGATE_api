@@ -1,5 +1,5 @@
 import numpy as np
-from tqdm import tqdm
+from typing import Optional
 import openai
 from .api import API
 from wrapt_timeout_decorator import timeout
@@ -45,6 +45,8 @@ class ChatGPTAPI(API):
             self.tokenizer = AutoTokenizer.from_pretrained(auxiliary_model_checkpoint)
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.auxiliary_model = AutoModelForCausalLM.from_pretrained(auxiliary_model_checkpoint).to(self.device)
+        else:
+            self.use_auxiliary_model = False
 
     @staticmethod
     def command_line_parser():
@@ -171,8 +173,8 @@ class ChatGPTAPI(API):
             return_prompts.extend([prompt] * num_samples_for_prompt)
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
-    def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, lookahead: bool = True, demo=0):
+    def variation(self, samples: np.ndarray, additional_info: np.ndarray,
+                        num_variations_per_sample: int, size: int, variation_degree: float, t=None, lookahead: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         if not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
@@ -195,7 +197,8 @@ class ChatGPTAPI(API):
                 t=t,
                 l=idx,
                 lookahead=lookahead,
-                demo=demo)
+                demo_samples=demo_samples,
+                sample_weight=sample_weight)
 
             variations.append(sub_variations)
 
@@ -208,12 +211,21 @@ class ChatGPTAPI(API):
             idx += 1
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, additional_info, size, variation_degree, t, l, lookahead, demo):
+    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: float, t: int, l: int, lookahead: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+        """
+        samples : (Nsyn, ~) 변형해야 할 실제 샘플
+        additional_info: (Nsyn,) 초기 샘플을 생성할 때 사용한 프롬프트
+        size: 이미지에서만 필요, 사용x
+        t, l: 중간 저장 시 이름을 구분하기 위한 변수.중요x
+        lookahead: lookahead으로 만들어지는 샘플들만 저장하기 위해서 필요한 변수. 중요x
+        demo_samples: (Nsyn, num_demo, ~) 데모로 사용할 샘플
+        sample_weight: w
+        """
+        num_demo = demo_samples.shape[1] if demo_samples is not None else 0
         max_batch_size = self._variation_batch_size
-        max_batch_size_w_demo = self._variation_batch_size * demo if demo > 0 else self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
-            float(samples.shape[0]) / max_batch_size_w_demo))
+            float(samples.shape[0]) / max_batch_size))
         start_iter = 0
         if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
             variation, start_iter = self._live_load(self._live_loading_target)
@@ -221,28 +233,25 @@ class ChatGPTAPI(API):
             self._live = 0
             logging.info(f"Loaded {self._live_loading_target}")
             logging.info(f"Start iteration from {start_iter}")
-            logging.info(f"Remaining {num_iterations} iteration")
-        logging.info(f"Number of demonstrations: {demo}")
-        logging.info(f"Number of samples in a batch: {max_batch_size_w_demo}")
+            logging.info(f"Remaining {num_iterations - start_iter} iteration")
+        logging.info(f"Number of demonstrations: {num_demo}")
+        logging.info(f"Number of samples in a batch: {max_batch_size}")
         idx = start_iter
     
         while idx < num_iterations:
-            start_idx = idx * max_batch_size_w_demo
-            end_idx = (idx + 1) * max_batch_size_w_demo
+            start_idx = idx * max_batch_size
+            end_idx = (idx + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-
-            # demonstration indices, demo개수만큼 인덱스 나눠놓음
-            if demo > 0:
-                demo_indices = np.arange(0, len(target_samples)). reshape(-1, demo)
+            target_demo = demo_samples[start_idx:end_idx].flatten() if num_demo > 0 else None
 
             if self._modality == 'text':
                 if self.use_auxiliary_model:
                     prompts = [f'<s>[INST] Paraphrase: {sample} [/INST]' for sample in target_samples]
                     response = self._paraphrase(prompts=prompts, temperature=variation_degree)
                 else:
-                    if demo > 0 :
+                    if num_demo > 0 :
                         # Prepare emostrations
-                        demo_prompts = "\n--\n".join(target_samples[demo_indices.flatten()])
+                        demo_prompts = "\n--\n".join(target_demo)
                         prompts = f"{demo_prompts}\n{self.variation_prompt}"
                     else:
                         prompts = "\n--\n".join(target_samples)

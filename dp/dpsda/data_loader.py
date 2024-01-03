@@ -5,6 +5,7 @@ import numpy as np
 import logging
 import blobfile as bf
 from PIL import Image
+from typing import Tuple, Optional
 
 from .dataset import ImageDataset, TextDataset, EXTENSIONS, list_files_recursively
 
@@ -81,3 +82,10 @@ def load_public_data(data_folder: str, modality: str, num_public_samples: int, p
             break
     additional_info.extend([prompt[0].replace('BATCH', " ")] * len(samples))
     return np.array(samples), np.array(additional_info)
+
+
+def load_count(path: str) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    npz = np.load(path)
+    count = npz['count']
+    losers = npz['losers'] if 'losers' in npz.files else None
+    return (count, losers)

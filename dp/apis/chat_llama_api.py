@@ -6,6 +6,7 @@ from transformers import AutoTokenizer
 import transformers
 import gc
 import os
+from typing import Optional
 from typing import List
 from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
@@ -135,17 +136,19 @@ class ChatLlama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, lookahead=True, demo=0):
+                        num_variations_per_sample, size, variation_degree, t=None, lookahead=True, demo_samples: Optional[np.ndarray]=None, sample_weight: float = 1.0):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
                 additional_info=additional_info,
-                variation_degree=variation_degree)
+                variation_degree=variation_degree,
+                demo_samples=demo_samples,
+                sample_weight=sample_weight)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, additional_info, variation_degree):
+    def _variation(self, samples, additional_info, variation_degree, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(

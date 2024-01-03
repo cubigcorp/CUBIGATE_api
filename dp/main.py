@@ -6,14 +6,14 @@ import imageio
 from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
-from dpsda.data_loader import load_private_data, load_samples, load_public_data
+from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples
+from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 
@@ -21,6 +21,17 @@ from dpsda.agm import get_epsilon
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--random_seed',
+        type=int,
+        default=2024
+    )
+    parser.add_argument(
+        '--sample_weight',
+        type=float,
+        default=1.0,
+        help="Weights for sample variation compared to demonstration"
+    )
     parser.add_argument(
         '--direct_variate',
         type=str2bool,
@@ -90,6 +101,12 @@ def parse_args():
         type=str,
         default="",
         help='Path to the data checkpoint')
+    parser.add_argument(
+        '--count_checkpoint_path',
+        type=str,
+        default="",
+        help="Path to the count checkpoint"
+    )
     parser.add_argument(
         '--data_checkpoint_step',
         type=int,
@@ -252,17 +269,11 @@ def parse_args():
     if len(args.num_samples_schedule) != len(args.variation_degree_schedule):
         raise ValueError('The length of num_samples_schedule and '
                          'variation_degree_schedule should be the same')
-
+    if args.sample_weight < 1:
+        assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
     return args, api
-
-
-def log_count(count, clean_count, path):
-    dirname = os.path.dirname(path)
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
-    np.savez(path, count=count, clean_count=clean_count)
 
 
 def round_to_uint8(image):
@@ -319,6 +330,7 @@ def main():
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
     metric = "FID" if args.num_private_samples > 2048 else "KID"
+    rng = np.random.default_rng(args.random_seed)
 
     all_private_samples, all_private_labels = load_private_data(
         data_dir=args.data_folder,
@@ -364,6 +376,10 @@ def main():
         logging.info(
             f'Loading data checkpoint from {args.data_checkpoint_path}')
         samples, additional_info = load_samples(args.data_checkpoint_path)
+        if args.sample_weight < 1:
+            assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
+            (count, loser) = load_count(args.count_checkpoint_path)
+            assert samples.shape[0] % (count.shape[0] // args.lookahead_degree) == 0, "The number of count should be a multiple of the number of synthetic samples and lookahead degree"
         if args.data_checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
         start_t = args.data_checkpoint_step + 1
@@ -427,7 +443,44 @@ def main():
         if args.lookahead_degree == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
-            logging.info('Running image variation')
+            if args.sample_weight < 1:
+                demo_indices = []  # (Nsyn * demonstrations)
+                logging.info('Getting demonstrations')
+                for class_i in private_classes:
+                    if 'count' in vars():
+                        # count 정보가 있는 경우 이를 활용
+                        # (Nsyn, lookahead) -> (Nsyn * lookahead)
+                        sub_count = count[
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                        sub_losers = loser[
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                        sub_count[sub_losers] = 0
+                        
+                    else:
+                        # count 정보가 없는 경우 random으로 뽑기
+                        # (Nsyn)
+                        sub_count = np.ones(shape=(num_samples_per_class))
+
+                    # Nsyn >> demonstration
+                    for _ in range(num_samples_per_class):
+                        sub_indices = rng.choice(
+                            np.arange(num_samples_per_class * class_i,
+                                    num_samples_per_class * (class_i + 1)),
+                            size=args.demonstration,
+                            p=sub_count / np.sum(sub_count),
+                            replace=False)
+                        demo_indices.append(sub_indices)
+                demo_indices = np.concatenate(demo_indices)
+                demo_samples = samples[demo_indices]
+                shape = samples.shape
+                demo_shape = (shape[0], args.demonstration) + shape[1:]
+                demo_samples = demo_samples.reshape(demo_shape)
+                logging.info(f'Demonstration samples shape: {demo_samples.shape}')
+            else:
+                demo_samples = None
+            logging.info('Running sample variation')
             packed_samples = api.variation(
                 samples=samples,
                 additional_info=additional_info,
@@ -436,9 +489,8 @@ def main():
                 variation_degree=args.variation_degree_schedule[t],
                 t=t,
                 lookahead=True,
-                demo=args.demonstration)
-            if args.direct_variate:
-                num_samples_per_class *= args.lookahead_degree
+                demo_samples=demo_samples,
+                sample_weight=args.sample_weight)
             
         if args.modality == 'text' or args.modality == 'time-series':
             packed_tokens = []
@@ -474,9 +526,14 @@ def main():
 
         logging.info('Computing histogram')
         count = []
+        loser = []
         for class_i, class_ in enumerate(private_classes):
-            dim = args.lookahead_degree if args.direct_variate else 0
-            sub_count, sub_clean_count = dp_nn_histogram(
+            if args.direct_variate:
+                num_samples_per_class *= args.lookahead_degree
+                dim = args.lookahead_degree
+            else:
+                dim = 0
+            sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
                 synthetic_features=packed_features[
                     num_samples_per_class * class_i:
                     num_samples_per_class * (class_i + 1)],
@@ -488,15 +545,17 @@ def main():
                 num_nearest_neighbor=args.num_nearest_neighbor,
                 mode=args.nn_mode,
                 threshold=args.count_threshold,
-                t=t,
-                result_folder=args.result_folder,
-                dim=dim)
+                dim=dim,
+                rng=rng)
             log_count(
                 sub_count,
                 sub_clean_count,
+                None,
                 f'{args.result_folder}/{t}/count_class{class_}.npz')
             count.append(sub_count)
+            loser.append(sub_losers)
         count = np.concatenate(count)
+        loser = np.concatenate(loser)
         if args.modality == 'image':
             for class_i, class_ in enumerate(private_classes):
                 visualize(
@@ -523,51 +582,42 @@ def main():
                     num_samples_per_class * class_i:
                     num_samples_per_class * (class_i + 1)]
                 for i in range(sub_count.shape[0]):
-                    indices = np.random.choice(
+                    indices = rng.choice(
                         np.arange(args.lookahead_degree),
                         size=1,
                         p = sub_count[i] / np.sum(sub_count[i])
                     )
                     selected.append(indices)
             selected = np.concatenate(selected)
+
             logging.info(f"Selected candiates: {selected}")
             new_new_samples = packed_samples[np.arange(packed_samples.shape[0]), selected]
             new_new_additional_info = additional_info
+            new_new_count = count[np.arange(count.shape[0]), selected]
+            new_new_loser = loser[np.arange(loser.shape[0]), selected]
+            count = new_new_count
+            loser = new_new_loser
+            log_count(
+                count,
+                None,
+                loser,
+                f'{args.result_folder}/{t}/count.npz')
         else:
             new_indices = []
             for class_i in private_classes:
                 sub_count = count[
                     num_samples_per_class * class_i:
                     num_samples_per_class * (class_i + 1)]
-                # 데모가 없으면 클래스별로 정해진 개수를 뽑고 데모가 있으면 그 수만큼 뽑음
-                if args.demonstration == 0:
-                    sub_indices = np.random.choice(
-                        np.arange(num_samples_per_class * class_i,
-                                num_samples_per_class * (class_i + 1)),
-                        size=new_num_samples_per_class,
-                        p=sub_count / np.sum(sub_count))
+                sub_indices = rng.choice(
+                    np.arange(num_samples_per_class * class_i,
+                            num_samples_per_class * (class_i + 1)),
+                    size=new_num_samples_per_class,
+                    p=sub_count / np.sum(sub_count))
                     
-                else:
-                    if len(sub_count) < args.demonstration:  # 필요한 데모의 개수보다 histogram의 수가 작을 경우에는 어쩔 수 없이  중복을 허용해야 함
-                        sub_indices = np.random.choice(
-                            np.arange(num_samples_per_class * class_i,
-                                    num_samples_per_class * (class_i + 1)),
-                            size=args.demonstration * new_num_samples_per_class,
-                            p=sub_count / np.sum(sub_count),
-                            replace=True)
-                    else:  # 그렇지 않으면 각각의 데모는 중복을 허용하지 않고 샘플 개수만큼 반복 선별
-                        sub_indices = []
-                        for _ in range(num_samples_per_class):
-                            demo_indices = np.random.choice(
-                                np.arange(num_samples_per_class * class_i,
-                                        num_samples_per_class * (class_i + 1)),
-                                size=args.demonstration ,
-                                p=sub_count / np.sum(sub_count),
-                                replace=False)
-                            sub_indices.extend(demo_indices)
+
                 new_indices.append(sub_indices)
             new_indices = np.concatenate(new_indices)
-            new_samples = samples[new_indices]  # 데모가 아닐 경우 -> 스케줄된 샘플 개수 / 데모일 경우 -> 스케줄된 샘플 개수 * 데모 개수
+            new_samples = samples[new_indices]
             new_additional_info = additional_info[new_indices]
             logging.debug(f"new_indices: {new_indices}")
             logging.info('Generating new samples')
@@ -578,7 +628,7 @@ def main():
                 size=args.image_size,
                 variation_degree=args.variation_degree_schedule[t],
                 t=t,
-                demo=args.demonstration)
+                lookahead=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 

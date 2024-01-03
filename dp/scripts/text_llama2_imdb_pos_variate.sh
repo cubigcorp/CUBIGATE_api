@@ -3,7 +3,7 @@ python main.py \
 --modality text \
 --feature_extractor clip_vit_b_32 \
 --count_threshold 2.0 \
---lookahead_degree 8 \
+--lookahead_degree 4 \
 --data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
 --num_samples_schedule 100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100 \
 --variation_degree_schedule 1.0,0.98,0.96,0.94,0.92,0.88,0.84,0.8,0.76,0.72,0.68,0.64,0.6,0.56,0.52,0.48,0.44,0.4 \
@@ -26,6 +26,8 @@ python main.py \
 --use_public_data true \
 --public_data_folder /mnt/cubigate/minsy/dp_data/IMDB/public/train/positive \
 --direct_variate true \
+--demonstration 3 \
+--sample_weight 0.5 \
 --epsilon 1.0 \
 --delta 0.0 \
 --api_device 2 \
