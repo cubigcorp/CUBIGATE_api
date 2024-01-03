@@ -1,0 +1,3 @@
+[task]: PROMPT based on the [source] in accordance with the [rule]
+[source]: SAMPLE
+[rule]: Start the movie review immediately. You must begin with the very first sentence of the review content. Do not include a title or an introduction, just write the movie review directly.

@@ -22,7 +22,7 @@ class Llama2API(API):
         super().__init__(*args, **kwargs)
         self.device = f'cuda:{api_device}'
         self.tokenizer = AutoTokenizer.from_pretrained(random_sampling_checkpoint)
-        self._random_sampling_api = AutoModelForCausalLM.from_pretrained(random_sampling_checkpoint).to(self.device)
+        self._random_sampling_api = AutoModelForCausalLM.from_pretrained(random_sampling_checkpoint, max_length=40960).to(self.device)
 
         self.tokenizer.pad_token_id = self._random_sampling_api.model.config.eos_token_id
         self.goal = goal
@@ -110,7 +110,7 @@ class Llama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [f'[INST]\n{initial} based on {sample}: \n[\INST]\n\n' for sample, initial in zip(target_samples, additional_info)]
+            prompts = [f'[INST]\nParaphrase: {sample} \n[\INST]\n\n' for sample, initial in zip(target_samples, additional_info)]
             variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
@@ -119,16 +119,23 @@ class Llama2API(API):
         return variations
 
 
-    def _sanity_check(self, generated: List[str], goal: str, variation: bool) -> List[bool]:
-            prompts = [f'[INST]\nAnswer if {gen} is {goal} only with "Yes" or "No" without any further explanation.\n[\INST]\n\n' for gen in generated]
-            with torch.no_grad():
-                if variation: 
-                    response = self._variation_api(prompts, batch_size=len(prompts))
-                else:
-                    response = self._random_sampling_api(prompts, batch_size=len(prompts))
-        
-            responses = ['Yes' in str(r) for r in response]
-            return responses
+    def _sanity_check(self, generated: List[str], goal: str, variation: bool, max_length=4096) -> List[bool]:
+        prompts = [f'[INST]\nAnswer if {gen} is {goal} only with "Yes" or "No" without any further explanation.\n[\INST]\n\n' for gen in generated]
+        input_ids = self.tokenizer(
+            prompts,
+            return_tensors="pt", padding="max_length",
+            max_length=max_length,
+            truncation=True,
+        ).input_ids
+        input_ids = input_ids.to(self.device)
+        with torch.no_grad():
+            if variation: 
+                response = self._variation_api.generate(input_ids)
+            else:
+                response = self._random_sampling_api.generate(input_ids)
+    
+        responses = ['Yes' in str(r) for r in response]
+        return responses
 
 
     def _generate(self, prompts: str, batch_size: int, variation: bool, variation_degree: float=None, max_length: int=4096):
@@ -141,26 +148,28 @@ class Llama2API(API):
         input_ids = input_ids.to(self.device)
         with torch.no_grad():
             if variation:
-                generated = self._variation_api(input_ids, temperature=variation_degree, early_stopping=True)
+                generated = self._variation_api.generate(input_ids, temperature=variation_degree, do_sample=True)
                 response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             else:
-                generated = self._random_sampling_api(input_ids, early_stopping=True)
+                generated = self._random_sampling_api.generate(input_ids)
                 response = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
         if not isinstance(response, list):
             response = [response]
-
         # prompt가 대답에 그대로 나타날 경우 제거
         indices = [text.find(prompt) for text, prompt in zip(response, prompts)]
-        striped = [response[i][indices[i]+len(prompts[i]):].strip('\n') for i in range(batch_size) if indices[i] >= 0]
-        # None인 경우 제거
-        texts = [text for text in striped if text is not None]
+        texts = [response[i][indices[i]+len(prompts[i]):].strip('\n') for i in range(batch_size) if indices[i] >= 0]
         # Filtering
+        for idx in range(len(texts)):
+            if texts[idx].startswith('Sure, here'):
+                idx = texts[idx].find(':')
+                texts[idx] = texts[idx][idx+1:].strip('\n')
+                
         filter = self._sanity_check(texts, self.goal, variation)
         texts = [texts[idx] for idx in range(len(texts)) if filter[idx]]
         # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
-        while remain:
+        while remain > 0 :
             sub_texts = self._generate(prompts=prompts[:remain], batch_size=remain, variation=False)[:remain]
             texts.extend(sub_texts)
             remain = batch_size - len(texts)

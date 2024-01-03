@@ -3,27 +3,28 @@ python main.py \
 --modality text \
 --feature_extractor clip_vit_b_32 \
 --count_threshold 2.0 \
---noise_multiplier 1.0 \
---lookahead_degree 1 \
---data_folder /home/minsy/CUBIG/dp/data/IMDB/private/positive \
---num_samples_schedule 10,10,10 \
---variation_degree_schedule 1.0,0.98,0.96 \
+--lookahead_degree 8 \
+--data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
+--num_samples_schedule 10,10 \
+--variation_degree_schedule 1.0,0.98 \
 --num_private_samples 10 \
---initial_prompt "Generate a positive movie reviews as if they were posted on IMDB. The review does not have a title, a number, or anything other than itself." \
+--initial_prompt "Generate a positive movie reviews as if it were posted on IMDB." \
+--goal "positive movie review" \
 --make_fid_stats false \
 --compute_fid false \
 --num_fid_samples 10 \
 --fid_model_name clip_vit_b_32 \
---fid_dataset_name imdb_pos_llama \
---result_folder /home/minsy/CUBIG/dp/result/IMDB/llama/positive \
+--fid_dataset_name imdb_pos \
+--result_folder /mnt/cubigate/minsy/result/IMDB/public_seed/llama_instruct/positive \
 --tmp_folder /tmp/IMDB/pos/llama \
 --api llama2 \
 --random_sampling_checkpoint togethercomputer/Llama-2-7B-32K-Instruct \
---random_sampling_batch_size 4 \
+--random_sampling_batch_size 1 \
 --variation_checkpoint togethercomputer/Llama-2-7B-32K-Instruct \
 --variation_batch_size 1 \
---api_device 2 \
+--use_public_data true \
+--public_data_folder /mnt/cubigate/minsy/dp_data/IMDB/public/train/positive \
+--direct_variate true \
 --epsilon 1.0 \
 --delta 0.0 \
---use_public_data true \
---public_data_folder /home/minsy/CUBIG/dp/data/IMDB/public/positive \
+--api_device 2 \
