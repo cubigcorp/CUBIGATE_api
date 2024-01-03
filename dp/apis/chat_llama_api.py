@@ -5,6 +5,7 @@ from .api import API
 from transformers import AutoTokenizer
 import transformers
 import gc
+import os
 from typing import List
 from dpsda.data_logger import log_samples
 from dpsda.data_loader import load_samples
@@ -139,11 +140,12 @@ class ChatLlama2API(API):
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
+                additional_info=additional_info,
                 variation_degree=variation_degree)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, variation_degree):
+    def _variation(self, samples, additional_info, variation_degree):
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
@@ -152,7 +154,9 @@ class ChatLlama2API(API):
             start_idx = iteration * max_batch_size
             end_idx = (iteration + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
-            prompts = [sample + f"\n\n{self._variation_prompt}" for sample in target_samples]
+
+            base_prompt = self._variation_prompt.replace('PROMPT', additional_info[0])
+            prompts = [base_prompt.replace('SAMPLE', sample) for sample in target_samples]
             variation = self._generate(prompts, batch_size=len(prompts), variation=True, variation_degree=variation_degree)
             variations.append(variation)
             torch.cuda.empty_cache()
@@ -162,7 +166,7 @@ class ChatLlama2API(API):
 
 
     def _sanity_check(self, generated: str, goal: str, variation: bool) -> List[bool]:
-        prompts = [[{"role":"user", "content":f"Is {gen} {goal} and does it comply with '{self._control_prompt}'? Answer only with 'Yes' or 'No' without any further explanation"}] for gen in generated]
+        prompts = [[{"role":"user", "content":f"Is {gen} {goal}'? Answer only with 'Yes' or 'No' without any further explanation"}] for gen in generated]
         with torch.no_grad():
             if variation: 
                 response = self._variation_api(prompts, batch_size=len(prompts))
@@ -187,13 +191,17 @@ class ChatLlama2API(API):
         # prompt가 대답에 그대로 나타날 경우 제거
         flag = 'assistant: '
         indices = [text.find(flag) for text in responses]
-        striped = [text[idx+len(flag):].strip(' ') for text, idx in zip(responses, indices) if idx >= 0]
-        print(striped)
-        # None인 경우 제거
-        texts = [text for text in striped if text]
+        texts = [text[idx+len(flag):].strip(' ') for text, idx in zip(responses, indices) if idx >= 0]
+        
+        for idx in range(len(texts)):
+            if texts[idx].startswith('Sure, here'):
+                anchor = texts[idx].find(':')
+                texts[idx] = texts[idx][anchor+1:].strip('\n')
+
         # Sanity Check
-        checks = self._sanity_check(responses, self._goal, variation)
-        texts = [responses[idx] for idx in range(len(responses)) if checks[idx]]
+        checks = self._sanity_check(texts, self._goal, variation)
+        texts = [texts[idx] for idx in range(len(texts)) if checks[idx]]
+        print(texts)
         # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
         while remain:
