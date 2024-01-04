@@ -10,7 +10,7 @@ from dpsda.data_loader import load_private_data, load_samples, load_public_data,
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
-from dpsda.dp_counter import dp_nn_histogram
+from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
@@ -21,6 +21,11 @@ from dpsda.agm import get_epsilon
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--dp',
+        type=str2bool,
+        default=True
+    )
     parser.add_argument(
         '--random_seed',
         type=int,
@@ -52,6 +57,7 @@ def parse_args():
     parser.add_argument(
         '--epsilon',
         type=float,
+        default=0.0,
         required=False)
     parser.add_argument(
         '--delta',
@@ -122,6 +128,11 @@ def parse_args():
         type=str,
         default='0,'*9 + '0',
         help='Variation degree at each iteration')
+    parser.add_argument(
+        '--adaptive_variation_degree',
+        type=str2bool,
+        default=False
+    )
     parser.add_argument(
         '--num_fid_samples',
         type=int,
@@ -327,8 +338,13 @@ def main():
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     setup_logging(os.path.join(args.result_folder, 'log.log'))
+    if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
+        logging.info("You set it non-dp. Privacy parameters are ignored.")
+        args.direct_variate = True
+        args.adaptive_variation_degree = True
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
+
     metric = "FID" if args.num_private_samples > 2048 else "KID"
     rng = np.random.default_rng(args.random_seed)
 
@@ -432,7 +448,7 @@ def main():
         log_fid(args.result_folder, fid, 0)
 
     T = len(args.num_samples_schedule)
-    if args.epsilon is not None:
+    if args.epsilon > 0 and args.dp:
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
         logging.info(f"Expected privacy cost per t: {args.epsilon:.2f}")
@@ -443,13 +459,37 @@ def main():
         if args.lookahead_degree == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
+            # adaptive variation degree - count 정보가 있을 때만 적용
+            if (args.adaptive_variation_degree) and ('count' in vars()):
+                logging.info("Calculating adaptive variation degree")
+                logging.info(f"Maximum degree for t={t}: {args.variation_degree_schedule[t]:.2f}")
+                variation_degree = []
+                for class_i in private_classes:
+                    # count: (Nsyn)
+                    # samples: (Nsyn, ~)
+                    sub_count = count[
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                    sub_num_vote = all_private_features[
+                        all_private_labels == class_].shape[0]
+                    sub_ratio = np.divide(sub_count, sub_num_vote)
+                    share = 1 - np.where(sub_ratio == 1, 0.9, sub_ratio)
+                    sub_degree = np.multiply(share, args.variation_degree_schedule[t])
+                    variation_degree.append(sub_degree)
+                    print(sub_degree)
+                variation_degree = np.concatenate(variation_degree)
+                logging.info(f'Largest variation degrees: {np.flip(np.sort(variation_degree))[:50]}')
+            else:
+                variation_degree = args.variation_degree_schedule[t]     
+                    
+            # demonstration
             if args.sample_weight < 1:
                 demo_indices = []  # (Nsyn * demonstrations)
                 logging.info('Getting demonstrations')
                 for class_i in private_classes:
                     if 'count' in vars():
                         # count 정보가 있는 경우 이를 활용
-                        # (Nsyn, lookahead) -> (Nsyn * lookahead)
+                        # (Nsyn)
                         sub_count = count[
                             num_samples_per_class * class_i:
                             num_samples_per_class * (class_i + 1)]
@@ -486,7 +526,7 @@ def main():
                 additional_info=additional_info,
                 num_variations_per_sample=args.lookahead_degree,
                 size=args.image_size,
-                variation_degree=args.variation_degree_schedule[t],
+                variation_degree=variation_degree,
                 t=t,
                 lookahead=True,
                 demo_samples=demo_samples,
@@ -523,7 +563,6 @@ def main():
         else:  # 기존 DPSDA
             # packed_features shape: (N_syn, embedding)
             packed_features = np.mean(packed_features, axis=0)
-
         logging.info('Computing histogram')
         count = []
         loser = []
@@ -533,20 +572,32 @@ def main():
                 dim = args.lookahead_degree
             else:
                 dim = 0
-            sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
-                synthetic_features=packed_features[
-                    num_samples_per_class * class_i:
-                    num_samples_per_class * (class_i + 1)],
-                private_features=all_private_features[
-                    all_private_labels == class_],
-                epsilon=args.epsilon,
-                delta=args.delta,
-                noise_multiplier=args.noise_multiplier,
-                num_nearest_neighbor=args.num_nearest_neighbor,
-                mode=args.nn_mode,
-                threshold=args.count_threshold,
-                dim=dim,
-                rng=rng)
+            if args.dp:
+                sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
+                    synthetic_features=packed_features[
+                        num_samples_per_class * class_i:
+                        num_samples_per_class * (class_i + 1)],
+                    private_features=all_private_features[
+                        all_private_labels == class_],
+                    epsilon=args.epsilon,
+                    delta=args.delta,
+                    noise_multiplier=args.noise_multiplier,
+                    num_nearest_neighbor=args.num_nearest_neighbor,
+                    mode=args.nn_mode,
+                    threshold=args.count_threshold,
+                    dim=dim,
+                    rng=rng)
+            else:
+                sub_count, sub_losers = nn_histogram(
+                    synthetic_features=packed_features[
+                        num_samples_per_class * class_i:
+                        num_samples_per_class * (class_i + 1)],
+                    private_features=all_private_features[
+                        all_private_labels == class_],
+                    mode=args.nn_mode,
+                    dim=dim
+                )
+                sub_clean_count = sub_count.copy()
             log_count(
                 sub_count,
                 sub_clean_count,
@@ -626,7 +677,7 @@ def main():
                 additional_info=new_additional_info,
                 num_variations_per_sample=1,
                 size=args.image_size,
-                variation_degree=args.variation_degree_schedule[t],
+                variation_degree=variation_degree,
                 t=t,
                 lookahead=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)

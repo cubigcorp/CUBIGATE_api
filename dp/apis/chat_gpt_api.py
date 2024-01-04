@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Optional
+from typing import Optional, Union
 import openai
 from .api import API
 from wrapt_timeout_decorator import timeout
@@ -174,8 +174,11 @@ class ChatGPTAPI(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples: np.ndarray, additional_info: np.ndarray,
-                        num_variations_per_sample: int, size: int, variation_degree: float, t=None, lookahead: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
-        if not (0 <= variation_degree <= 1):
+                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, lookahead: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+        if isinstance(variation_degree, np.ndarray):
+            if np.any(0 > variation_degree) or np.any(variation_degree > 1):
+                raise ValueError('variation_degree should be between 0 and 1')
+        elif not (0 <= variation_degree <= 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
 
@@ -211,7 +214,7 @@ class ChatGPTAPI(API):
             idx += 1
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: float, t: int, l: int, lookahead: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: Union[float, np.ndarray], t: int, l: int, lookahead: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         """
         samples : (Nsyn, ~) 변형해야 할 실제 샘플
         additional_info: (Nsyn,) 초기 샘플을 생성할 때 사용한 프롬프트
@@ -243,24 +246,25 @@ class ChatGPTAPI(API):
             end_idx = (idx + 1) * max_batch_size
             target_samples = samples[start_idx:end_idx]
             target_demo = demo_samples[start_idx:end_idx].flatten() if num_demo > 0 else None
+            target_degree = variation_degree[start_idx:end_idx] if isinstance(variation_degree, np.ndarray) else variation_degree
 
             if self._modality == 'text':
                 if self.use_auxiliary_model:
-                    prompts = [f'<s>[INST] Paraphrase: {sample} [/INST]' for sample in target_samples]
-                    response = self._paraphrase(prompts=prompts, temperature=variation_degree)
+                    prompt = [f'<s>[INST] Paraphrase: {sample} [/INST]' for sample in target_samples]
+                    response = self._paraphrase(prompts=prompt, temperature=variation_degree)
                 else:
                     if num_demo > 0 :
                         # Prepare emostrations
-                        demo_prompts = "\n--\n".join(target_demo)
-                        prompts = f"{demo_prompts}\n{self.variation_prompt}"
+                        demo_prompt = "\n--\n".join(target_demo)
+                        prompt = f"{demo_prompt}\n{self.variation_prompt}"
                     else:
-                        prompts = "\n--\n".join(target_samples)
-                        prompts = f"{prompts}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
+                        prompt = "\n--\n".join(target_samples)
+                        prompt = f"{prompt}\n{self.variation_prompt.replace('PROMPT', additional_info[0])}"
 
                     messages = [
-                            {"role": "user", "content": prompts}
+                            {"role": "user", "content": prompt}
                         ]
-                    response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree)
+                    response = self._generate(model=self._variation_checkpoint, messages=messages, temperature=variation_degree[0])
                     if max_batch_size > 1 :
                         response = response.strip('--').split('--')
                     else:
@@ -285,6 +289,9 @@ class ChatGPTAPI(API):
     
     @timeout(1000)
     def _generate(self, model: str, messages: Dict, batch_size=1, stop: str=None, temperature: float=1, sleep=10):
+        print(temperature)
+        import sys
+        sys.exit()
         response = openai.ChatCompletion.create(
                   model=model, 
                   messages=messages,
