@@ -1,6 +1,27 @@
 # DPSDA
 [DPSDA Github](https://github.com/microsoft/DPSDA) 참고
 
+## 2024.01.04 Updates
+### Parameters
+* `dp`: DP 적용 여부, default=True
+* `random_seed`: 난수 조절, default=2024
+* `sample_weight`: sample-based variation에 대한 가중치, default=1.0
+* `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, default=0
+* `direct_variate`: 1226 그거 적용 여부, default=False
+* `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, default=False
+
+### Setting examples
+* Vanila DPSDA: 위의 파라미터 모두 default로
+* sample-based: `direct_variate true`
+* demonstration-based: `direct_variate true`, `sample_weight 0`, `demonstration [DEMO]`
+* mixed: `direct_variate true`, `sample_weight [W]`, `demonstration [DEMO]`
+  * sample_weight < 1일 때 demonstration이 0이면 assert error
+* non-DP: `dp false`
+  * epsilon, delta, threshold는 따로 설정하였어도 0으로 변경
+  * `direct_variate`와 `adaptive_variation_degree`도 True로 변경
+
+---
+
 ## 모달리티 및 API 추가 시 변경해야 할 것들
 * *!!* 가 달려 있는 항목은 API별 한 번씩 작업해야 함.
 * *!!* 가 달려 있지 않는 항목은 모달리티별 한 번씩 작업해야 함.
