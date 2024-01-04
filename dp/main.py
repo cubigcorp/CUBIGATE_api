@@ -473,10 +473,9 @@ def main():
                     sub_num_vote = all_private_features[
                         all_private_labels == class_].shape[0]
                     sub_ratio = np.divide(sub_count, sub_num_vote)
-                    share = 1 - np.where(sub_ratio == 1, 0.9, sub_ratio)
+                    share = 1 - np.clip(sub_ratio, 0, 0.9)
                     sub_degree = np.multiply(share, args.variation_degree_schedule[t])
                     variation_degree.append(sub_degree)
-                    print(sub_degree)
                 variation_degree = np.concatenate(variation_degree)
                 logging.info(f'Largest variation degrees: {np.flip(np.sort(variation_degree))[:50]}')
             else:
