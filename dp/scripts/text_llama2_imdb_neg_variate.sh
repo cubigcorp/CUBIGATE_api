@@ -1,5 +1,5 @@
 python main.py \
---device 1 \
+--device 2 \
 --modality text \
 --feature_extractor clip_vit_b_32 \
 --count_threshold 2.0 \
@@ -28,7 +28,7 @@ python main.py \
 --direct_variate true \
 --epsilon 1.0 \
 --delta 0.0 \
---api_device 1 \
+--api_device 2 \
 --variation_prompt_path prompts/text_variation_chat_llama2_v.0.2.txt \
 --data_checkpoint_path "/mnt/cubigate/minsy/result/IMDB/public_seed/negative/3/_samples.npz" \
 --data_checkpoint_step 3
