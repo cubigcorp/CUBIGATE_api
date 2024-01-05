@@ -30,3 +30,5 @@ python main.py \
 --delta 0.0 \
 --api_device 1 \
 --variation_prompt_path prompts/text_variation_chat_llama2_v.0.2.txt \
+--data_checkpoint_path "/mnt/cubigate/minsy/result/IMDB/public_seed/negative/3/_samples.npz" \
+--data_checkpoint_step 3
