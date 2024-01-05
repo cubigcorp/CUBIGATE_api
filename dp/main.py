@@ -408,7 +408,7 @@ def main():
         samples, additional_info = load_samples(args.data_checkpoint_path)
         if args.direct_variate:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
-            (count, loser, accum_loser) = load_count(args.count_checkpoint_path)
+            (count, accum_loser) = load_count(args.count_checkpoint_path)
             assert samples.shape[0] % (count.shape[0] // args.lookahead_degree) == 0, "The number of count should be a multiple of the number of synthetic samples and lookahead degree"
             diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
             first_vote_only = diversity > args.diversity_lower_bounnd
@@ -512,7 +512,7 @@ def main():
                         sub_count = count[
                             num_samples_per_class * class_i:
                             num_samples_per_class * (class_i + 1)]
-                        sub_losers = loser[
+                        sub_losers = accum_loser[class_i, 
                             num_samples_per_class * class_i:
                             num_samples_per_class * (class_i + 1)]
                         sub_count[sub_losers] = 0
