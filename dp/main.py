@@ -413,7 +413,7 @@ def main():
         if args.direct_variate:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
             (count, accum_loser) = load_count(args.count_checkpoint_path)
-            assert samples.shape[0] % (count.shape[0] // args.num_candidate) == 0, "The number of count should be a multiple of the number of synthetic samples and candidate degree"
+            assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
             diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
             first_vote_only = diversity > args.diversity_lower_bounnd
         if args.data_checkpoint_step < 0:
