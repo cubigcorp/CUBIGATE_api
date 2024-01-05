@@ -6,21 +6,17 @@ from typing import Dict, Optional
 import torch
 from dpsda.agm import get_sigma
 
-def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index: faiss.Index):
+def revival(counts: np.ndarray, loser_filter: np.ndarray, synthetic_features: np.ndarray, dim: int, index: faiss.Index):
     logging.info("Losers' revival started")
-    loser_idx = [[*range(idx * dim, (idx + 1) * dim)] for idx in range(counts.shape[0]) if np.all(counts[idx] == 0)]
-    logging.info(f"Total losers: {len(loser_idx)}")
-    if len(loser_idx) == 0:
-        loser_filter = np.full(counts.shape, False)
-        return counts, loser_filter
     counts = counts.flatten()
     sorted_idx = np.flip(np.argsort(counts))
     winner_idx = [idx for idx in sorted_idx if counts[idx] > 0]
-    logging.info(f"Selected winners indices : {winner_idx}")
+    logging.info(f"Winners indices : {winner_idx}")
 
     shares = counts[winner_idx]
     logging.info(f"Winners' shares: {shares}")
     logging.info(f"Total vote: {sum(shares)}")
+    loser_idx = loser_filter.flatten().nonzero()[0]
     losers = synthetic_features[loser_idx].reshape((-1, dim, synthetic_features.shape[-1]))
     winners = synthetic_features[winner_idx]
 
@@ -30,19 +26,17 @@ def revival(counts: np.ndarray, synthetic_features: np.ndarray, dim: int, index:
         index.add(loser)
         _, ids = index.search(winners, k=1)
         weights = get_weights(ids.flatten(), shares)
-        logging.info(f"Weights for vote: {weights}")
         count = get_count_flat(ids, dim, verbose=0, weights=weights)
         loser_counts.append(count)
         index.reset()
     loser_counts = np.stack(loser_counts)
     logging.info(f"Counts for losers: {loser_counts}")
 
-    temp = np.array(loser_idx).flatten()
-    loser_filter = np.array([idx in temp for idx in range(counts.shape[0])]).reshape((-1, dim))  # (Nsyn, lookahead)
+    loser_idx = loser_idx.reshape((-1, dim))
     loser_idx = [idx[0] // dim for idx in loser_idx]
     counts = counts.reshape((-1, dim))
     counts[loser_idx] = loser_counts
-    return counts, loser_filter
+    return counts
 
 
 def get_weights(ids: np.ndarray, share: np.ndarray) -> Dict:
@@ -112,9 +106,27 @@ def sanity_check(counts: np.ndarray) -> bool:
     return True
 
 
-def dp_nn_histogram(synthetic_features, private_features, epsilon: float, delta: float, 
-                    noise_multiplier, rng, num_packing=1, num_nearest_neighbor=1, mode='L2',
-                    threshold=0.0, dim: int = 0):
+def get_losers(counts: np.ndarray, loser_lower_bound: float, dim: int) -> np.ndarray:
+    logging.info("Counting losers")
+    loser_idx = [[*range(idx * dim, (idx + 1) * dim)] for idx in range(counts.shape[0]) if np.sum(counts[idx]) < loser_lower_bound]
+    logging.info(f"Total losers: {len(loser_idx)}")
+    loser_idx = np.array(loser_idx).flatten()
+    counts = counts.flatten()
+    losers = np.array([idx in loser_idx for idx in range(counts.shape[0])]).reshape((-1, dim)) 
+    return losers
+
+
+def diversity_check(losers: np.ndarray, diversity: float, num_samples: int, diversity_lower_bound: float) -> bool:
+    logging.info("Checking diversity")
+    if diversity < diversity_lower_bound: return False
+    updated_div = diversity - losers.sum() / num_samples
+    return updated_div > diversity_lower_bound
+
+
+def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray, epsilon: float, delta: float,
+                    noise_multiplier: float, rng: np.random.Generator, num_nearest_neighbor: int, mode: str,
+                    threshold: float, dim: int, diversity: float, diversity_lower_bound: float = 0.0,
+                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1):
     # public_features shape: (Nsyn * lookahead, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
@@ -155,9 +167,17 @@ def dp_nn_histogram(synthetic_features, private_features, epsilon: float, delta:
 
     if dim > 0:
         index.reset()
-        counts, losers = revival(
+        losers = get_losers(counts, loser_lower_bound, dim)
+        if losers.sum() == 0:
+            return counts, clean_count, losers
+        first_vote_only = diversity_check(losers, diversity, synthetic_features.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
+        if first_vote_only:
+            counts[losers] = 0
+            return counts, clean_count, losers
+        counts = revival(
             counts=counts,
             synthetic_features=synthetic_features,
+            loser_filter=losers,
             dim=dim,
             index=index)
         assert sanity_check(counts)

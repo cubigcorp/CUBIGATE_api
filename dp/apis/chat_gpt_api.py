@@ -289,9 +289,6 @@ class ChatGPTAPI(API):
     
     @timeout(1000)
     def _generate(self, model: str, messages: Dict, batch_size=1, stop: str=None, temperature: float=1, sleep=10):
-        print(temperature)
-        import sys
-        sys.exit()
         response = openai.ChatCompletion.create(
                   model=model, 
                   messages=messages,

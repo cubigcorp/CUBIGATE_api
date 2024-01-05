@@ -22,6 +22,17 @@ from dpsda.agm import get_epsilon
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        '--diversity_lower_bound',
+        type=float,
+        default=0,
+        help="Lower bound for diversity as the ratio of samples whose maximun counts among candidates are larger than the diversity filter threshold"
+    )
+    parser.add_argument(
+        '--loser_lower_bound',
+        type=float,
+        default=0.0
+    )
+    parser.add_argument(
         '--dp',
         type=str2bool,
         default=True
@@ -387,43 +398,51 @@ def main():
             device=f'cuda:{args.device}',
             metric=metric)
 
+    num_samples = args.num_samples_schedule[0]
+    num_samples_per_class = num_samples // private_num_classes
+
     # Generating initial samples.
     if args.data_checkpoint_path != '':
         logging.info(
             f'Loading data checkpoint from {args.data_checkpoint_path}')
         samples, additional_info = load_samples(args.data_checkpoint_path)
-        if args.sample_weight < 1:
+        if args.direct_variate:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
-            (count, loser) = load_count(args.count_checkpoint_path)
+            (count, loser, accum_loser) = load_count(args.count_checkpoint_path)
             assert samples.shape[0] % (count.shape[0] // args.lookahead_degree) == 0, "The number of count should be a multiple of the number of synthetic samples and lookahead degree"
+            diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
+            first_vote_only = diversity > args.diversity_lower_bounnd
         if args.data_checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
         start_t = args.data_checkpoint_step + 1
-    elif args.use_public_data:
-        logging.info(f'Using public data in {args.public_data_folder} as initial samples')
-        samples, additional_info = load_public_data(
-            data_folder=args.public_data_folder,
-            modality=args.modality,
-            num_public_samples=args.num_samples_schedule[0],
-            prompt=args.initial_prompt)
-        start_t = 1
     else:
-        logging.info('Generating initial samples')
-        samples, additional_info = api.random_sampling(
-            prompts=args.initial_prompt,
-            num_samples=args.num_samples_schedule[0],
-            size=args.image_size)
-        logging.info(f"Generated initial samples: {len(samples)}")
-        log_samples(
-            samples=samples,
-            additional_info=additional_info,
-            folder=f'{args.result_folder}/{0}',
-            plot_samples=args.plot_images,
-            modality=args.modality)
-        if args.data_checkpoint_step >= 0:
-            logging.info('Ignoring data_checkpoint_step')
-        start_t = 1
-
+        accum_loser = np.full((private_num_classes, num_samples), False)
+        diversity = np.full((private_num_classes), 1.0)
+        first_vote_only = np.full((private_num_classes), True)
+        if args.use_public_data:
+            logging.info(f'Using public data in {args.public_data_folder} as initial samples')
+            samples, additional_info = load_public_data(
+                data_folder=args.public_data_folder,
+                modality=args.modality,
+                num_public_samples=args.num_samples_schedule[0],
+                prompt=args.initial_prompt)
+            start_t = 1
+        else:
+            logging.info('Generating initial samples')
+            samples, additional_info = api.random_sampling(
+                prompts=args.initial_prompt,
+                num_samples=args.num_samples_schedule[0],
+                size=args.image_size)
+            logging.info(f"Generated initial samples: {len(samples)}")
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{args.result_folder}/{0}',
+                plot_samples=args.plot_images,
+                modality=args.modality)
+            if args.data_checkpoint_step >= 0:
+                logging.info('Ignoring data_checkpoint_step')
+            start_t = 1
     if args.compute_fid:
         logging.info(f'Computing {metric}')
         if args.modality == 'text' or args.modality == 'time-series':
@@ -452,6 +471,7 @@ def main():
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
         logging.info(f"Expected privacy cost per t: {args.epsilon:.2f}")
+
     for t in range(start_t, T):
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
@@ -564,18 +584,19 @@ def main():
             packed_features = np.mean(packed_features, axis=0)
         logging.info('Computing histogram')
         count = []
-        loser = []
         for class_i, class_ in enumerate(private_classes):
             if args.direct_variate:
-                num_samples_per_class *= args.lookahead_degree
+                num_samples_per_class_w_lookahead = num_samples_per_class * args.lookahead_degree
                 dim = args.lookahead_degree
             else:
                 dim = 0
+                num_samples_per_class_w_lookahead = num_samples_per_class
             if args.dp:
+                logging.info(f"Current diversity: {diversity[class_i]}")
                 sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
                     synthetic_features=packed_features[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_lookahead * class_i:
+                        num_samples_per_class_w_lookahead * (class_i + 1)],
                     private_features=all_private_features[
                         all_private_labels == class_],
                     epsilon=args.epsilon,
@@ -585,12 +606,21 @@ def main():
                     mode=args.nn_mode,
                     threshold=args.count_threshold,
                     dim=dim,
-                    rng=rng)
+                    rng=rng,
+                    diversity=diversity[class_i],
+                    diversity_lower_bound=args.diversity_lower_bound,
+                    loser_lower_bound=args.loser_lower_bound,
+                    first_vote_only=first_vote_only[class_i])
+                accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
+                updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
+                logging.info(f"Diversity loss: {diversity[class_i] - updated_div}")
+                diversity[class_i] = updated_div
+                first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
             else:
                 sub_count, sub_losers = nn_histogram(
                     synthetic_features=packed_features[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_lookahead * class_i:
+                        num_samples_per_class_w_lookahead * (class_i + 1)],
                     private_features=all_private_features[
                         all_private_labels == class_],
                     mode=args.nn_mode,
@@ -603,21 +633,19 @@ def main():
                 None,
                 f'{args.result_folder}/{t}/count_class{class_}.npz')
             count.append(sub_count)
-            loser.append(sub_losers)
         count = np.concatenate(count)
-        loser = np.concatenate(loser)
         if args.modality == 'image':
             for class_i, class_ in enumerate(private_classes):
                 visualize(
                     samples=samples[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_lookahead * class_i:
+                        num_samples_per_class_w_lookahead * (class_i + 1)],
                     packed_samples=packed_samples[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_lookahead * class_i:
+                        num_samples_per_class_w_lookahead * (class_i + 1)],
                     count=count[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_lookahead * class_i:
+                        num_samples_per_class_w_lookahead * (class_i + 1)],
                     folder=f'{args.result_folder}/{t}',
                     suffix=f'class{class_}')
         logging.info('Generating new indices')
@@ -627,30 +655,42 @@ def main():
 
         if args.direct_variate:
             selected = []
+            candidate = []
             for class_i in private_classes:
-                sub_count = count[
-                    num_samples_per_class * class_i:
-                    num_samples_per_class * (class_i + 1)]
+                class_indices = np.arange(num_samples_per_class * class_i, num_samples_per_class * (class_i + 1))
+                sub_count = count[class_indices]
+                sub_flat_count = sub_count.flatten()
                 for i in range(sub_count.shape[0]):
-                    indices = rng.choice(
-                        np.arange(args.lookahead_degree),
-                        size=1,
-                        p = sub_count[i] / np.sum(sub_count[i])
-                    )
-                    selected.append(indices)
-            selected = np.concatenate(selected)
-
-            logging.info(f"Selected candiates: {selected}")
-            new_new_samples = packed_samples[np.arange(packed_samples.shape[0]), selected]
+                    # loser
+                    # 패자부할전을 할 경우에 이 단계에서 loser로 분류되는 샘플은 없으므로 첫 번째 투표만 하는 경우에만 해당
+                    if np.all(sub_count[i] == 0):
+                        flat_idx = rng.choice(
+                            np.arange(num_samples_per_class_w_lookahead),
+                            size=1,
+                            p=sub_flat_count / np.sum(sub_flat_count)
+                        )[0]
+                        idx = [class_indices[flat_idx // args.lookahead_degree], flat_idx % args.lookahead_degree]
+                        logging.info(f"Winner selected in place of loser at {i}: {[flat_idx // args.lookahead_degree, flat_idx % args.lookahead_degree]}")
+                    # winner
+                    else:
+                        cand_idx = rng.choice(
+                            np.arange(args.lookahead_degree),
+                            size=1,
+                            p=sub_count[i] / np.sum(sub_count[i])
+                        )[0]
+                        candidate.append([i, cand_idx])
+                        idx = [class_indices[i], cand_idx]
+                    selected.append(idx)
+            selected = np.stack(selected)
+            logging.info(f"Selected candiates: {candidate}")
+            new_new_samples = packed_samples[selected[:, 0], selected[:, 1]]
             new_new_additional_info = additional_info
-            new_new_count = count[np.arange(count.shape[0]), selected]
-            new_new_loser = loser[np.arange(loser.shape[0]), selected]
+            new_new_count = count[selected[:, 0], selected[:, 1]]
             count = new_new_count
-            loser = new_new_loser
             log_count(
                 count,
                 None,
-                loser,
+                accum_loser,
                 f'{args.result_folder}/{t}/count.npz')
         else:
             new_indices = []
