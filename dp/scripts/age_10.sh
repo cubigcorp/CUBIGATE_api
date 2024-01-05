@@ -6,7 +6,7 @@ python main.py \
 --fid_dataset_name customized_dataset \
 --count_threshold 2.0 \
 --noise_multiplier 1.0 \
---lookahead_degree 8 \
+--num_candidate 8 \
 --image_size 512x512 \
 --private_image_size 512 \
 --data_folder /home/minsy/CUBIG/dp/data/age/train/18-20 \

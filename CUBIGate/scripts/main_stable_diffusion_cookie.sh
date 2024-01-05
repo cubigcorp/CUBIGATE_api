@@ -1,7 +1,7 @@
 python main.py \
 --generate \
 --count_threshold 2.0 \
---lookahead_degree 2 \
+--num_candidate 2 \
 --img_size 512x512 \
 --org_img_size 512 \
 --data_folder /home/minsy/CUBIG/dp/data/cookie \

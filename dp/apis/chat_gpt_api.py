@@ -174,7 +174,7 @@ class ChatGPTAPI(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples: np.ndarray, additional_info: np.ndarray,
-                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, lookahead: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         if isinstance(variation_degree, np.ndarray):
             if np.any(0 > variation_degree) or np.any(variation_degree > 1):
                 raise ValueError('variation_degree should be between 0 and 1')
@@ -183,7 +183,7 @@ class ChatGPTAPI(API):
         variations = []
 
         start_iter = 0
-        if (self._live == 1) and ('sub' not in self._live_loading_target) and lookahead:
+        if (self._live == 1) and ('sub' not in self._live_loading_target) and candidate:
             sub_variations, start_iter = self._live_load(self._live_loading_target)
             variations.extend(sub_variations)
             self._live = 0
@@ -199,13 +199,13 @@ class ChatGPTAPI(API):
                 variation_degree=variation_degree,
                 t=t,
                 l=idx,
-                lookahead=lookahead,
+                candidate=candidate,
                 demo_samples=demo_samples,
                 sample_weight=sample_weight)
 
             variations.append(sub_variations)
 
-            if self._live == 0 and lookahead:
+            if self._live == 0 and candidate:
                 self._live_save(
                     samples=variations,
                     additional_info=[f'{idx} iteration for {t} variation'] * len(sub_variations),
@@ -214,13 +214,13 @@ class ChatGPTAPI(API):
             idx += 1
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: Union[float, np.ndarray], t: int, l: int, lookahead: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: Union[float, np.ndarray], t: int, l: int, candidate: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         """
         samples : (Nsyn, ~) 변형해야 할 실제 샘플
         additional_info: (Nsyn,) 초기 샘플을 생성할 때 사용한 프롬프트
         size: 이미지에서만 필요, 사용x
         t, l: 중간 저장 시 이름을 구분하기 위한 변수.중요x
-        lookahead: lookahead으로 만들어지는 샘플들만 저장하기 위해서 필요한 변수. 중요x
+        candidate: candidate으로 만들어지는 샘플들만 저장하기 위해서 필요한 변수. 중요x
         demo_samples: (Nsyn, num_demo, ~) 데모로 사용할 샘플
         sample_weight: w
         """
@@ -230,7 +230,7 @@ class ChatGPTAPI(API):
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
         start_iter = 0
-        if (self._live == 1) and ('sub' in self._live_loading_target) and lookahead:
+        if (self._live == 1) and ('sub' in self._live_loading_target) and candidate:
             variation, start_iter = self._live_load(self._live_loading_target)
             variations.extend(variation)
             self._live = 0
@@ -275,7 +275,7 @@ class ChatGPTAPI(API):
                     logging.info(f"{idx}_variation length: {len(variation)}")
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)
-            if self._live == 0 and _save and lookahead:
+            if self._live == 0 and _save and candidate:
                 self._live_save(
                     samples=variations,
                     additional_info=[f'{idx} iteration for sub-variation'] * len(variation),

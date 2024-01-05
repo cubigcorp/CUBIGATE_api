@@ -4,7 +4,7 @@ python main.py \
 --feature_extractor bert_base_nli_mean_tokens \
 --count_threshold 2.0 \
 --noise_multiplier 1.0 \
---lookahead_degree 3 \
+--num_candidate 3 \
 --data_folder /home/yerinyoon/Cubigate_ai_engine/dp/data/adult_files/train \
 --num_samples_schedule 100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100 \
 --variation_degree_schedule 1.0,0.98,0.96,0.94,0.92,0.88,0.84,0.8,0.76,0.72,0.68,0.64,0.6,0.56,0.52,0.48,0.44,0.4 \

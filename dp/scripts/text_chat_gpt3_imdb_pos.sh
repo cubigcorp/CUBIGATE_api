@@ -4,7 +4,7 @@ python main.py \
 --feature_extractor clip_vit_b_32 \
 --count_threshold 2.0 \
 --noise_multiplier 1.0 \
---lookahead_degree 4 \
+--num_candidate 4 \
 --data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
 --num_samples_schedule 10,10,10 \
 --variation_degree_schedule 1.0,0.98,0.96 \

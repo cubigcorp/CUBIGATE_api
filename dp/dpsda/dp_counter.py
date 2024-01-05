@@ -118,7 +118,6 @@ def get_losers(counts: np.ndarray, loser_lower_bound: float, dim: int) -> np.nda
 
 def diversity_check(losers: np.ndarray, diversity: float, num_samples: int, diversity_lower_bound: float) -> bool:
     logging.info("Checking diversity")
-    if diversity < diversity_lower_bound: return False
     updated_div = diversity - losers.sum() / num_samples
     return updated_div > diversity_lower_bound
 
@@ -127,7 +126,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
                     noise_multiplier: float, rng: np.random.Generator, num_nearest_neighbor: int, mode: str,
                     threshold: float, dim: int, diversity: float, diversity_lower_bound: float = 0.0,
                     loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1):
-    # public_features shape: (Nsyn * lookahead, embedding) if direct_variate
+    # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
     assert synthetic_features.shape[0] % num_packing == 0
@@ -189,7 +188,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
 
 
 def nn_histogram(synthetic_features, private_features, dim: int, num_packing=1, num_nearest_neighbor=1, mode='L2'):
-    # public_features shape: (Nsyn * lookahead, embedding) if direct_variate
+    # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
     assert synthetic_features.shape[0] % num_packing == 0

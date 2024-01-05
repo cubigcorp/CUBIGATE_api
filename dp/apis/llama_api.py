@@ -91,7 +91,7 @@ class Llama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, lookahead=None, demo=None):
+                        num_variations_per_sample, size, variation_degree, t=None, candidate=None, demo=None):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(

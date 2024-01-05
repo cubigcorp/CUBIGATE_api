@@ -9,6 +9,8 @@
 * `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, default=0
 * `direct_variate`: 1226 그거 적용 여부, default=False
 * `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, default=False
+* `diversity_lower_bound`: 패자부할전을 진행하지 않기 위한 다양성 하한선, default = 0.5
+* `loser_lower_bound`: 패자로 분류되기 위한 투표수 하한선, default = N_syn / k
 
 ### Setting examples
 * Vanila DPSDA: 위의 파라미터 모두 default로
@@ -60,7 +62,7 @@
 
 ## Sampling/variation 도중에 중단된 실험 재개하기
 1. `--save_samples_live` 추가하여 중간 결과물을 저장하도록 설정
-   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{lookahead}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
+   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{candidate}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
 2. `--live_loading_target`으로 불러올 중간 결과물의 경로 지정
    * 불러올 중간 결과물이 없다면 필요 없음
 3. `--save_samples_live_freq`로 저장 주기(배치 단위) 설정

@@ -3,7 +3,7 @@ python main.py \
 --modality text \
 --feature_extractor clip_vit_b_32 \
 --count_threshold 2.0 \
---lookahead_degree 8 \
+--num_candidate 8 \
 --data_folder /mnt/cubigate/minsy/dp_data/IMDB/private/positive \
 --num_samples_schedule 10,10 \
 --variation_degree_schedule 1.0,0.98 \

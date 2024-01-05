@@ -24,8 +24,8 @@ def parse_args():
     parser.add_argument(
         '--diversity_lower_bound',
         type=float,
-        default=0,
-        help="Lower bound for diversity as the ratio of samples whose maximun counts among candidates are larger than the diversity filter threshold"
+        default=0.5,
+        help="Lower bound for diversity as the ratio of samples who are winners"
     )
     parser.add_argument(
         '--loser_lower_bound',
@@ -52,7 +52,7 @@ def parse_args():
         '--direct_variate',
         type=str2bool,
         required=False,
-        help="Whether to use lookahead variations"
+        help="Whether to use candidate variations"
     )
     parser.add_argument(
         '--use_public_data',
@@ -161,10 +161,10 @@ def parse_args():
         required=False,
         help='Noise multiplier for DP NN histogram')    #noise_multiplier => how??
     parser.add_argument(
-        '--lookahead_degree',
+        '--num_candidate',
         type=int,
         default=0,
-        help=('Lookahead degree for computing distances between private and '  #
+        help=('candidate degree for computing distances between private and '  #
               'generated images'))
     parser.add_argument(
         '--feature_extractor',
@@ -283,6 +283,10 @@ def parse_args():
     live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
+    if args.direct_variate:
+        assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
+    if args.loser_lower_bound == 0:
+        args.loser_lower_bound = args.num_samples_schedule[0] / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
@@ -409,7 +413,7 @@ def main():
         if args.direct_variate:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
             (count, accum_loser) = load_count(args.count_checkpoint_path)
-            assert samples.shape[0] % (count.shape[0] // args.lookahead_degree) == 0, "The number of count should be a multiple of the number of synthetic samples and lookahead degree"
+            assert samples.shape[0] % (count.shape[0] // args.num_candidate) == 0, "The number of count should be a multiple of the number of synthetic samples and candidate degree"
             diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
             first_vote_only = diversity > args.diversity_lower_bounnd
         if args.data_checkpoint_step < 0:
@@ -476,7 +480,7 @@ def main():
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
-        if args.lookahead_degree == 0:
+        if args.num_candidate == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
             # adaptive variation degree - count 정보가 있을 때만 적용
@@ -543,11 +547,11 @@ def main():
             packed_samples = api.variation(
                 samples=samples,
                 additional_info=additional_info,
-                num_variations_per_sample=args.lookahead_degree,
+                num_variations_per_sample=args.num_candidate,
                 size=args.image_size,
                 variation_degree=variation_degree,
                 t=t,
-                lookahead=True,
+                candidate=True,
                 demo_samples=demo_samples,
                 sample_weight=args.sample_weight)
             
@@ -576,8 +580,8 @@ def main():
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
-        if args.direct_variate:  # Lookahead로 생성한 variation을 사용할 경우
-            # packed_features shape: (N_syn * lookahead_degree, embedding)
+        if args.direct_variate:  # candidate로 생성한 variation을 사용할 경우
+            # packed_features shape: (N_syn * num_candidate, embedding)
             packed_features = np.concatenate(packed_features, axis=0)
         else:  # 기존 DPSDA
             # packed_features shape: (N_syn, embedding)
@@ -586,17 +590,17 @@ def main():
         count = []
         for class_i, class_ in enumerate(private_classes):
             if args.direct_variate:
-                num_samples_per_class_w_lookahead = num_samples_per_class * args.lookahead_degree
-                dim = args.lookahead_degree
+                num_samples_per_class_w_candidate = num_samples_per_class * args.num_candidate
+                dim = args.num_candidate
             else:
                 dim = 0
-                num_samples_per_class_w_lookahead = num_samples_per_class
+                num_samples_per_class_w_candidate = num_samples_per_class
             if args.dp:
                 logging.info(f"Current diversity: {diversity[class_i]}")
                 sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
                     synthetic_features=packed_features[
-                        num_samples_per_class_w_lookahead * class_i:
-                        num_samples_per_class_w_lookahead * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     private_features=all_private_features[
                         all_private_labels == class_],
                     epsilon=args.epsilon,
@@ -619,8 +623,8 @@ def main():
             else:
                 sub_count, sub_losers = nn_histogram(
                     synthetic_features=packed_features[
-                        num_samples_per_class_w_lookahead * class_i:
-                        num_samples_per_class_w_lookahead * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     private_features=all_private_features[
                         all_private_labels == class_],
                     mode=args.nn_mode,
@@ -638,14 +642,14 @@ def main():
             for class_i, class_ in enumerate(private_classes):
                 visualize(
                     samples=samples[
-                        num_samples_per_class_w_lookahead * class_i:
-                        num_samples_per_class_w_lookahead * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     packed_samples=packed_samples[
-                        num_samples_per_class_w_lookahead * class_i:
-                        num_samples_per_class_w_lookahead * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     count=count[
-                        num_samples_per_class_w_lookahead * class_i:
-                        num_samples_per_class_w_lookahead * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     folder=f'{args.result_folder}/{t}',
                     suffix=f'class{class_}')
         logging.info('Generating new indices')
@@ -665,16 +669,16 @@ def main():
                     # 패자부할전을 할 경우에 이 단계에서 loser로 분류되는 샘플은 없으므로 첫 번째 투표만 하는 경우에만 해당
                     if np.all(sub_count[i] == 0):
                         flat_idx = rng.choice(
-                            np.arange(num_samples_per_class_w_lookahead),
+                            np.arange(num_samples_per_class_w_candidate),
                             size=1,
                             p=sub_flat_count / np.sum(sub_flat_count)
                         )[0]
-                        idx = [class_indices[flat_idx // args.lookahead_degree], flat_idx % args.lookahead_degree]
-                        logging.info(f"Winner selected in place of loser at {i}: {[flat_idx // args.lookahead_degree, flat_idx % args.lookahead_degree]}")
+                        idx = [class_indices[flat_idx // args.num_candidate], flat_idx % args.num_candidate]
+                        logging.info(f"Winner selected in place of loser at {i}: {[flat_idx // args.num_candidate, flat_idx % args.num_candidate]}")
                     # winner
                     else:
                         cand_idx = rng.choice(
-                            np.arange(args.lookahead_degree),
+                            np.arange(args.num_candidate),
                             size=1,
                             p=sub_count[i] / np.sum(sub_count[i])
                         )[0]
@@ -718,7 +722,7 @@ def main():
                 size=args.image_size,
                 variation_degree=variation_degree,
                 t=t,
-                lookahead=False)
+                candidate=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 
