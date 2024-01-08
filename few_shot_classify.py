@@ -5,6 +5,7 @@ from transformers import CLIPProcessor, CLIPModel
 from transformers import BertTokenizer, BertForSequenceClassification
 from transformers import pipeline
 from PIL import Image
+from sklearn.metrics import f1_score
 import torch
 import numpy as np
 import json
@@ -22,7 +23,7 @@ def argument():
         '--partial',
         type=int,
         required=False,
-        default=np.inf,
+        default=None,
         help="Number of samples to load from data directory"
     )
     parser.add_argument(
@@ -98,7 +99,8 @@ def argument():
         '--result_dir',
         type=str,
         required=False,
-        default='Path of the directory where the result will be saved.'
+        default='result',
+        help='Path of the directory where the result will be saved.'
     )
     parser.add_argument(
         '--dp',
@@ -183,17 +185,19 @@ def chatgpt_predict(samples: List[Union[str, float]], modality: str, exem_sample
     if few_shot > 0:
         exem_samples = get_samples(dir=exem_samples_dir, modality=modality, num=None)
         rng = np.random.default_rng(seed=2023)
-        exem_idx = rng.choice(len(exem_samples) - 1, few_shot)
-        exemplars = np.array(exem_samples)[exem_idx]
-        exem_prompt = ""
-        for exemplar in exemplars:
-            with open(exemplar, 'r') as f:
-                exem = f.read()
-            label = exemplar.split('/')[-2]
-            exem_prompt += f'{exem} : {label}\n'
+
 
     predictions = {}
     for sample_path in samples:
+        exem_prompt = ""
+        if few_shot > 0 :
+            exem_idx = rng.choice(len(exem_samples) - 1, few_shot)
+            exemplars = np.array(exem_samples)[exem_idx]
+            for exemplar in exemplars:
+                with open(exemplar, 'r') as f:
+                    exem = f.read()
+                label = exemplar.split('/')[-2]
+                exem_prompt += f'{exem} : {label}\n'
         with open(sample_path, 'r') as f:
             sample = f.read()
         unique_label = list(set(labels))
@@ -303,6 +307,14 @@ def get_accuracy(pred: np.ndarray, target: np.ndarray) -> float:
     correct = len(np.where(pred == target)[0])
     acc = correct / len(pred)
     return acc
+
+
+def get_f1_score(pred: np.ndarray, target: np.ndarray, labels) -> float:
+    pred_idx = [labels.index(p) for p in pred]
+    target_idx = [labels.index(t) for t in target]
+    f1 = f1_score(target_idx, pred_idx)
+    return f1
+
     
 def get_confidence(pred: Dict, num_classes: int) -> List:
     count = np.array([0] * (num_classes + 1))
@@ -358,6 +370,7 @@ if __name__ == '__main__':
     else:
         pred_dist = get_dist(predictions, args.num_classes, config['total_labels'])
     predictions['predicted_distribution'] = pred_dist
+    predictions['f1'] = get_f1_score(pred, target, config['total_labels'])
 
     with open(file_name, 'w') as f:
         json.dump(predictions, f)
