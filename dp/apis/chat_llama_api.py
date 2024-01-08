@@ -204,7 +204,6 @@ class ChatLlama2API(API):
         # Sanity Check
         checks = self._sanity_check(texts, self._goal, variation)
         texts = [texts[idx] for idx in range(len(texts)) if checks[idx]]
-        print(texts)
         # 정해진 개수만큼 만들어지지 않은 경우
         remain = batch_size - len(texts)
         while remain:
