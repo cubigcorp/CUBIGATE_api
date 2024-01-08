@@ -54,7 +54,7 @@ def cleanfid_make_custom_stats(
             custom_image_tranform=custom_image_tranform,
             custom_fn_resize=custom_fn_resize)
 
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series':
         from dpsda.text_feature_extractor import get_folder_features
         if model_name == 'clip_vit_b_32':
             from dpsda.text_feature_extractor import CLIP_fx_txt
@@ -101,7 +101,7 @@ def make_fid_stats(samples, dataset, dataset_res, dataset_split, modality: str,
         for i in tqdm(range(samples.shape[0])):
             image = round_to_uint8(resizer(samples[i]))
             imageio.imsave(os.path.join(tmp_folder, f'{i}.png'), image)
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series':
         for i in tqdm(range(samples.shape[0])):
             with open(os.path.join(tmp_folder, f'{i}.txt'), 'w') as f:
                 item = [str(s) for s in samples[i]]
@@ -143,7 +143,7 @@ def compute_metric(samples, modality: str, tmp_folder='tmp_fid', dataset='cifar1
             tmp_folder, dataset_name=dataset, dataset_split=dataset_split,
             dataset_res=dataset_res, batch_size=batch_size, model_name=model_name)
 
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series':
         for i in tqdm(range(samples.shape[0])):
             with open(os.path.join(tmp_folder, f'{i}.txt'), 'w') as f:
                 item = [str(s) for s in samples[i]]

@@ -69,7 +69,7 @@ def extract_features(
             fdir=tmp_folder,
             verbose=verbose)
 
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series':
         if model_name == "clip_vit_b_32":
             from dpsda.text_feature_extractor import CLIP_fx_txt, get_files_features
             feat_model = CLIP_fx_txt("ViT-B/32", device=device)

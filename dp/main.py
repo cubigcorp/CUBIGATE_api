@@ -106,7 +106,7 @@ def parse_args():
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2'], #Tabular_1:Chatgpt
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'noapi'], #Tabular_1:Chatgpt
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',

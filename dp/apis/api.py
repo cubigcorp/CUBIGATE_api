@@ -12,6 +12,7 @@ class API(ABC):
         self._live_loading_target = None
         self._modality = None
         self._save_freq = 0
+        self._image_size = None
 
     @staticmethod
     def command_line_parser():
