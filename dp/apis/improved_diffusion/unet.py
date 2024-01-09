@@ -20,7 +20,7 @@ class FP32UNetModel(UNetModel):
 
 
 def create_model(
-    image_size,
+    sample_size,
     num_channels,
     num_res_blocks,
     learn_sigma,
@@ -32,18 +32,18 @@ def create_model(
     use_scale_shift_norm,
     dropout,
 ):
-    if image_size == 256:
+    if sample_size == 256:
         channel_mult = (1, 1, 2, 2, 4, 4)
-    elif image_size == 64:
+    elif sample_size == 64:
         channel_mult = (1, 2, 3, 4)
-    elif image_size == 32:
+    elif sample_size == 32:
         channel_mult = (1, 2, 2, 2)
     else:
-        raise ValueError(f"unsupported image size: {image_size}")
+        raise ValueError(f"unsupported image size: {sample_size}")
 
     attention_ds = []
     for res in attention_resolutions.split(","):
-        attention_ds.append(image_size // int(res))
+        attention_ds.append(sample_size // int(res))
 
     return FP32UNetModel(
         in_channels=3,

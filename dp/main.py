@@ -3,8 +3,10 @@ import logging
 import os
 import numpy as np
 import imageio
+import wandb
 from torchvision.utils import make_grid
 import torch
+from typing import List
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
@@ -16,11 +18,53 @@ from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
+from dpsda.experiment import get_toy_data, log_plot
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--experimental',
+        type=str2bool,
+        default=False,
+        help="Whether it is just experimental with toy data."
+    )
+    parser.add_argument(
+        '--toy_data_type',
+        type=str,
+        default="square_upper_right",
+        help="[SHAPE]_[Y_POSITION]_[X_POSITION]"
+    )
+    parser.add_argument(
+        '--toy_private_bounding_ratio',
+        type=float,
+        default=0.0
+    )
+    parser.add_argument(
+        '--wandb_log_notes',
+        type=str,
+        default="",
+        help="Notes to describe the experiment on wandb"
+    )
+    parser.add_argument(
+        '--wandb_log_tags',
+        type=str,
+        default='',
+        help="Tags to classify the experiement on wandb"
+    )
+    parser.add_argument(
+        '--wandb_log_dir',
+        type=str,
+        default='/mnt/cubigate/',
+        help="An absolute path to a directory where metadata will be stored"
+    )
+    parser.add_argument(
+        '--wandb_resume_id',
+        type=str,
+        default=None,
+        help="Wandb run ID to resume"
+    )
     parser.add_argument(
         '--diversity_lower_bound',
         type=float,
@@ -63,6 +107,7 @@ def parse_args():
         '--public_data_folder',
         type=str,
         required=False,
+        default='',
         help="Folder for public data if any"
     )
     parser.add_argument(
@@ -78,7 +123,7 @@ def parse_args():
     parser.add_argument(
         '--device',
         type=int,
-        required=True)
+        default=0)
     parser.add_argument(
         '--save_samples_live',
         action='store_true')
@@ -101,12 +146,12 @@ def parse_args():
         '--modality',
         type=str,
         choices=['image', 'text', 'time-series'], #Tabular: text
-        required=True)
+        default='toy')
     parser.add_argument(
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2'], #Tabular_1:Chatgpt
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'toy'], #Tabular_1:Chatgpt
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',
@@ -169,7 +214,7 @@ def parse_args():
     parser.add_argument(
         '--feature_extractor',
         type=str,
-        default='clip_vit_b_32',
+        default='',
         choices=['bert_base_nli_mean_tokens', 'all_mpnet_base_v2', 'inception_v3', 'clip_vit_b_32', 'original'], 
         help='Which image feature extractor to use')
     parser.add_argument(
@@ -184,7 +229,7 @@ def parse_args():
         choices=['L2', 'IP', 'cosine'],
         help='Which distance metric to use in DP NN histogram')   ##Bert랑 같이 similarty로 갈지 논의
     parser.add_argument(
-        '--private_image_size',
+        '--private_sample_size',
         type=int,
         default=1024,
         help='Size of private images')
@@ -201,7 +246,8 @@ def parse_args():
     parser.add_argument(
         '--data_folder',
         type=str,
-        required=True,
+        required=False,
+        default='',
         help='Folder that contains the private images')
     parser.add_argument(
         '--count_threshold',
@@ -275,7 +321,7 @@ def parse_args():
              'prompts, the initial samples will be generated with these '
              'prompts')
     parser.add_argument(
-        '--image_size',
+        '--sample_size',
         type=str,
         default='1024x1024',
         help='Size of generated images in the format of HxW')
@@ -286,11 +332,13 @@ def parse_args():
     if args.direct_variate:
         assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
     if args.loser_lower_bound == 0:
-        args.loser_lower_bound = args.num_samples_schedule[0] / args.num_candidate
+        args.loser_lower_bound = 1 / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
         variation_degree_type, args.variation_degree_schedule.split(',')))
+    args.wandb_log_tags = args.wandb_log_tags.split(',') if args.wandb_log_tags != '' else None
+    args.toy_data_type = args.toy_data_type.split('_')
 
     if len(args.num_samples_schedule) != len(args.variation_degree_schedule):
         raise ValueError('The length of num_samples_schedule and '
@@ -348,52 +396,98 @@ def log_fid(folder, fid, t):
         f.write(f'{t} {fid}\n')
 
 
+def wandb_logging(private_labels: List, diversity: List, first_vote_only: List, t: int, losers: List=None):
+    if len(private_labels) > 1:
+        # diversity logging
+        wandb.Table.MAX_ROWS = len(diversity)
+        div_table = wandb.Table(columns=private_labels, data=diversity)
+        vote_table = wandb.Table(columns=private_labels, data=first_vote_only)
+        wandb.log({"diversity": div_table, "fist_vote_only": vote_table, "t": t})
+    else:
+        wandb.log({"diversity": diversity[0][0], "first_vote_only": first_vote_only[0][0], "t":t})
+
+    if losers is not None:
+        loser_table = wandb.Table(columns=private_labels, data=losers)
+        wandb.log({"has_lost": loser_table, "t": t})
+
+
 def main():
     args, api = parse_args()
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
-    setup_logging(os.path.join(args.result_folder, 'log.log'))
+    log_file = os.path.join(args.result_folder, 'log.log')
+    setup_logging(log_file)
     if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
         logging.info("You set it non-dp. Privacy parameters are ignored.")
         args.direct_variate = True
         args.adaptive_variation_degree = True
+
+    if args.experimental:
+        logging.info("This is an experimental run. All the unnecessary parameters are ignored.")
+        args.make_fid_stats = False
+        args.data_checkpoint_path = args.public_data_folder = args.data_folder = ''
+        args.use_public_data = False
+        args.modality = 'toy'
+        args.feature_extractor = ''
+        
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
+    wandb.init(
+        entity='cubig_ai',
+        project="AZOO",
+        config=dict(vars(args), **vars(api.args)),
+        notes=args.wandb_log_notes,
+        tags=args.wandb_log_tags,
+        dir=args.wandb_log_dir,
+        id=args.wandb_resume_id
+    )
 
     metric = "FID" if args.num_private_samples > 2048 else "KID"
     rng = np.random.default_rng(args.random_seed)
 
-    all_private_samples, all_private_labels = load_private_data(
-        data_dir=args.data_folder,
-        batch_size=args.data_loading_batch_size,
-        image_size=args.private_image_size,
-        class_cond=args.gen_class_cond,
-        num_private_samples=args.num_private_samples,
-        modality=args.modality,
-        model=args.feature_extractor)
+    if args.experimental:
+        all_private_samples, all_private_labels = get_toy_data(
+            shape=args.toy_data_type[0],
+            y_position=args.toy_data_type[1],
+            x_position=args.toy_data_type[2],
+            num_data=args.num_private_samples,
+            ratio=args.toy_private_bounding_ratio,
+            num_labels=1,
+            size=args.sample_size,
+            rng=rng
+        )
+        all_private_features = all_private_samples
+    else:
+        all_private_samples, all_private_labels = load_private_data(
+            data_dir=args.data_folder,
+            batch_size=args.data_loading_batch_size,
+            sample_size=args.private_sample_size,
+            class_cond=args.gen_class_cond,
+            num_private_samples=args.num_private_samples,
+            modality=args.modality,
+            model=args.feature_extractor)
+        logging.info('Extracting features')
+        all_private_features = extract_features(
+            data=all_private_samples,
+            tmp_folder=args.tmp_folder,
+            model_name=args.feature_extractor,
+            res=args.private_sample_size,
+            batch_size=args.feature_extractor_batch_size,
+            device=f'cuda:{args.device}',
+            use_dataparallel=False,
+            modality=args.modality)
+    logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
-    private_classes = list(sorted(set(list(all_private_labels))))
+    private_classes = list(map(int, sorted(set(list(all_private_labels)))))
     private_num_classes = len(private_classes)
     logging.info(f'Private_num_classes: {private_num_classes}')
-
-    logging.info('Extracting features')
-    all_private_features = extract_features(
-        data=all_private_samples,
-        tmp_folder=args.tmp_folder,
-        model_name=args.feature_extractor,
-        res=args.private_image_size,
-        batch_size=args.feature_extractor_batch_size,
-        device=f'cuda:{args.device}',
-        use_dataparallel=False,
-        modality=args.modality)
-    logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
     if args.make_fid_stats:
         logging.info(f'Computing {metric} stats')
         make_fid_stats(
             samples=all_private_samples,
             dataset=args.fid_dataset_name,
-            dataset_res=args.private_image_size,
+            dataset_res=args.private_sample_size,
             dataset_split=args.fid_dataset_split,
             tmp_folder=args.tmp_folder,
             model_name=args.fid_model_name,
@@ -436,17 +530,25 @@ def main():
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
                 num_samples=args.num_samples_schedule[0],
-                size=args.image_size)
+                size=args.sample_size)
             logging.info(f"Generated initial samples: {len(samples)}")
-            log_samples(
-                samples=samples,
-                additional_info=additional_info,
-                folder=f'{args.result_folder}/{0}',
-                plot_samples=args.plot_images,
-                modality=args.modality)
+            if not args.experimental:
+                log_samples(
+                    samples=samples,
+                    additional_info=additional_info,
+                    folder=f'{args.result_folder}/{0}',
+                    plot_samples=args.plot_images,
+                    modality=args.modality)
             if args.data_checkpoint_step >= 0:
-                logging.info('Ignoring data_checkpoint_step')
+                logging.info('Ignoring data_checkpoint_step'),
             start_t = 1
+        if args.direct_variate:
+            wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], 0, accum_loser.T.tolist())
+
+        if args.experimental:
+            log_plot(all_private_samples, samples, args.sample_size, 0, args.result_folder)
+    
+    
     if args.compute_fid:
         logging.info(f'Computing {metric}')
         if args.modality == 'text' or args.modality == 'time-series':
@@ -459,7 +561,7 @@ def main():
             samples=tokens,
             tmp_folder=args.tmp_folder,
             num_fid_samples=args.num_fid_samples,
-            dataset_res=args.private_image_size,
+            dataset_res=args.private_sample_size,
             dataset=args.fid_dataset_name,
             dataset_split=args.fid_dataset_split,
             model_name=args.fid_model_name,
@@ -467,8 +569,9 @@ def main():
             modality=args.modality,
             device=f'cuda:{args.device}',
             metric=metric)
-        logging.info(f'fid={fid}')
+        logging.info(f'{metric}={fid}')
         log_fid(args.result_folder, fid, 0)
+        wandb.log({f'{metric}': fid})
 
     T = len(args.num_samples_schedule)
     if args.epsilon > 0 and args.dp:
@@ -548,7 +651,7 @@ def main():
                 samples=samples,
                 additional_info=additional_info,
                 num_variations_per_sample=args.num_candidate,
-                size=args.image_size,
+                size=args.sample_size,
                 variation_degree=variation_degree,
                 t=t,
                 candidate=True,
@@ -565,18 +668,23 @@ def main():
         
         else:
             packed_tokens = packed_samples
+
         packed_features = []
         logging.info('Running feature extraction')
+
         for i in range(packed_samples.shape[1]):
-            sub_packed_features = extract_features(
-                data=packed_tokens[:, i],
-                tmp_folder=args.tmp_folder,
-                model_name=args.feature_extractor,
-                res=args.private_image_size,
-                batch_size=args.feature_extractor_batch_size,
-                device=f'cuda:{args.device}',
-                use_dataparallel=False,
-                modality=args.modality)
+            if args.experimental:
+                sub_packed_features = packed_tokens[:, i]
+            else:
+                sub_packed_features = extract_features(
+                    data=packed_tokens[:, i],
+                    tmp_folder=args.tmp_folder,
+                    model_name=args.feature_extractor,
+                    res=args.private_sample_size,
+                    batch_size=args.feature_extractor_batch_size,
+                    device=f'cuda:{args.device}',
+                    use_dataparallel=False,
+                    modality=args.modality)
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
@@ -591,9 +699,9 @@ def main():
         for class_i, class_ in enumerate(private_classes):
             if args.direct_variate:
                 num_samples_per_class_w_candidate = num_samples_per_class * args.num_candidate
-                dim = args.num_candidate
+                num_candidate = args.num_candidate
             else:
-                dim = 0
+                num_candidate = 0
                 num_samples_per_class_w_candidate = num_samples_per_class
             if args.dp:
                 logging.info(f"Current diversity: {diversity[class_i]}")
@@ -609,17 +717,19 @@ def main():
                     num_nearest_neighbor=args.num_nearest_neighbor,
                     mode=args.nn_mode,
                     threshold=args.count_threshold,
-                    dim=dim,
+                    num_candidate=num_candidate,
                     rng=rng,
                     diversity=diversity[class_i],
                     diversity_lower_bound=args.diversity_lower_bound,
                     loser_lower_bound=args.loser_lower_bound,
                     first_vote_only=first_vote_only[class_i])
-                accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
-                updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
-                logging.info(f"Diversity loss: {diversity[class_i] - updated_div}")
-                diversity[class_i] = updated_div
-                first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
+                if first_vote_only[class_i]:
+                    accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
+                    updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
+                    logging.info(f"Diversity loss: {diversity[class_i] - updated_div}")
+                    diversity[class_i] = updated_div
+                    first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
+                    wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], t, accum_loser.T.tolist())
             else:
                 sub_count, sub_losers = nn_histogram(
                     synthetic_features=packed_features[
@@ -628,7 +738,7 @@ def main():
                     private_features=all_private_features[
                         all_private_labels == class_],
                     mode=args.nn_mode,
-                    dim=dim
+                    num_candidate=num_candidate
                 )
                 sub_clean_count = sub_count.copy()
             log_count(
@@ -719,7 +829,7 @@ def main():
                 samples=new_samples,
                 additional_info=new_additional_info,
                 num_variations_per_sample=1,
-                size=args.image_size,
+                size=args.sample_size,
                 variation_degree=variation_degree,
                 t=t,
                 candidate=False)
@@ -737,7 +847,7 @@ def main():
                 new_new_tokens,
                 tmp_folder=args.tmp_folder,
                 num_fid_samples=args.num_fid_samples,
-                dataset_res=args.private_image_size,
+                dataset_res=args.private_sample_size,
                 dataset=args.fid_dataset_name,
                 dataset_split=args.fid_dataset_split,
                 model_name=args.fid_model_name,
@@ -751,14 +861,24 @@ def main():
         samples = new_new_samples
         additional_info = new_new_additional_info
 
-        log_samples(
-            samples=samples,
-            additional_info=additional_info,
-            folder=f'{args.result_folder}/{t}',
-            plot_samples=args.plot_images,
-            modality=args.modality)
-        logging.info(f"Privacy cost so far: {get_epsilon(args.epsilon, t):.2f}")
+        if args.experimental:
+            log_plot(all_private_samples, samples, args.sample_size, t, args.result_folder)
+        else:
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{args.result_folder}/{t}',
+                plot_samples=args.plot_images,
+                modality=args.modality)
+        if args.dp:
+            eps = get_epsilon(args.epsilon, t)
+            logging.info(f"Privacy cost so far: {eps:.2f}")
+            wandb.log({"epsilon": eps, "t": t})
 
+    artifact = wandb.Artifact(name="log", type="dataset")
+    artifact.add_file(local_path=log_file, name=wandb.run.name)
+    wandb.log_artifact(artifact)
+    os.remove(log_file)
 
 if __name__ == '__main__':
     main()

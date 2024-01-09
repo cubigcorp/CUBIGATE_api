@@ -17,7 +17,7 @@ def _round_to_uint8(image):
 
 
 class ImprovedDiffusionAPI(API):
-    def __init__(self, model_image_size, num_channels, num_res_blocks,
+    def __init__(self, model_sample_size, num_channels, num_res_blocks,
                  learn_sigma, class_cond, use_checkpoint,
                  attention_resolutions, num_heads, num_heads_upsample,
                  use_scale_shift_norm, dropout, diffusion_steps, sigma_small,
@@ -27,7 +27,7 @@ class ImprovedDiffusionAPI(API):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model = create_model(
-            image_size=model_image_size,
+            sample_size=model_sample_size,
             num_channels=num_channels,
             num_res_blocks=num_res_blocks,
             learn_sigma=learn_sigma,
@@ -57,7 +57,7 @@ class ImprovedDiffusionAPI(API):
             self._sampler = torch.nn.DataParallel(self._sampler)
         self._batch_size = batch_size
         self._use_ddim = use_ddim
-        self._image_size = model_image_size
+        self._sample_size = model_sample_size
         self._clip_denoised = clip_denoised
         self._class_cond = class_cond
 
@@ -69,7 +69,7 @@ class ImprovedDiffusionAPI(API):
             'See https://github.com/openai/improved-diffusion for the details'
             ' of the arguments.')
         parser.add_argument(
-            '--model_image_size',
+            '--model_sample_size',
             type=int,
             default=64)
         parser.add_argument(
@@ -193,16 +193,16 @@ class ImprovedDiffusionAPI(API):
                 each image.
         """
         width, height = list(map(int, size.split('x')))
-        if width != self._image_size or height != self._image_size:
+        if width != self._sample_size or height != self._sample_size:
             raise ValueError(
-                f'width and height must be equal to {self._image_size}')
+                f'width and height must be equal to {self._sample_size}')
         samples, labels = sample(
             sampler=self._sampler,
             start_t=0,
             num_samples=num_samples,
             batch_size=self._batch_size,
             use_ddim=self._use_ddim,
-            image_size=self._image_size,
+            sample_size=self._sample_size,
             clip_denoised=self._clip_denoised,
             class_cond=self._class_cond)
         samples = _round_to_uint8((samples + 1.0) * 127.5)
@@ -245,9 +245,9 @@ class ImprovedDiffusionAPI(API):
                 variations as numpy arrays of type uint8.
         """
         width, height = list(map(int, size.split('x')))
-        if width != self._image_size or height != self._image_size:
+        if width != self._sample_size or height != self._sample_size:
             raise ValueError(
-                f'width and height must be equal to {self._image_size}')
+                f'width and height must be equal to {self._sample_size}')
         images = images.astype(np.float32) / 127.5 - 1.0
         images = images.transpose(0, 3, 1, 2)
         variations = []
@@ -274,14 +274,14 @@ class ImprovedDiffusionAPI(API):
             num_samples=images.shape[0],
             batch_size=self._batch_size,
             use_ddim=self._use_ddim,
-            image_size=self._image_size,
+            sample_size=self._sample_size,
             clip_denoised=self._clip_denoised,
             class_cond=self._class_cond)
         return samples
 
 
 def sample(sampler, num_samples, start_t, batch_size, use_ddim,
-           image_size, clip_denoised, class_cond,
+           sample_size, clip_denoised, class_cond,
            start_image=None, labels=None):
     all_images = []
     all_labels = []
@@ -292,7 +292,7 @@ def sample(sampler, num_samples, start_t, batch_size, use_ddim,
             (batch_size if start_image is None
              else min(batch_size,
                       start_image.shape[0] - batch_cnt * batch_size))
-        shape = (current_batch_size, 3, image_size, image_size)
+        shape = (current_batch_size, 3, sample_size, sample_size)
         model_kwargs = {}
         if class_cond:
             if labels is None:
@@ -313,7 +313,7 @@ def sample(sampler, num_samples, start_t, batch_size, use_ddim,
                                           (batch_cnt + 1) * batch_size]),
             use_ddim=use_ddim,
             noise=torch.randn(*shape, device=dist_util.dev()),
-            image_size=image_size)
+            sample_size=sample_size)
         batch_cnt += 1
 
         all_images.append(sample.detach().cpu().numpy())
@@ -347,13 +347,13 @@ class Sampler(torch.nn.Module):
         self._diffusion = diffusion
 
     def forward(self, clip_denoised, model_kwargs, start_t, start_image,
-                use_ddim, noise, image_size):
+                use_ddim, noise, sample_size):
         sample_fn = (
             self._diffusion.p_sample_loop if not use_ddim
             else self._diffusion.ddim_sample_loop)
         sample = sample_fn(
             self._model,
-            (noise.shape[0], 3, image_size, image_size),
+            (noise.shape[0], 3, sample_size, sample_size),
             clip_denoised=clip_denoised,
             model_kwargs=model_kwargs,
             start_t=max(start_t, 0),

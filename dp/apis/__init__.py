@@ -24,6 +24,9 @@ def get_api_class_from_name(name):
     elif name == 'llama2':
         from .llama_api import Llama2API
         return Llama2API
+    elif name == 'toy':
+        from .toy_api import ToyAPI
+        return ToyAPI
     else:
         raise ValueError(f'Unknown API name {name}')
 
