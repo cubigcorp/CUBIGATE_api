@@ -1,0 +1,1 @@
+Generate a positive movie review as if it were posted on IMDB using the exemplars above as references, each of which is identified with '--' and is equally important. Referencing needs to be invisible and must not be obvious.  Your result must not have a title, a number or anything other than itself. Utilize a maximum range of freedom.

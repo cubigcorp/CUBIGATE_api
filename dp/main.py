@@ -6,14 +6,14 @@ import imageio
 from torchvision.utils import make_grid
 import torch
 from dpsda.logging import setup_logging
-from dpsda.data_loader import load_private_data, load_samples, load_public_data
+from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
-from dpsda.dp_counter import dp_nn_histogram
+from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples
+from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 
@@ -22,10 +22,43 @@ from dpsda.agm import get_epsilon
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        '--diversity_lower_bound',
+        type=float,
+        default=0.5,
+        help="Lower bound for diversity as the ratio of samples who are winners"
+    )
+    parser.add_argument(
+        '--loser_lower_bound',
+        type=float,
+        default=0.0
+    )
+    parser.add_argument(
+        '--dp',
+        type=str2bool,
+        default=True
+    )
+    parser.add_argument(
+        '--random_seed',
+        type=int,
+        default=2024
+    )
+    parser.add_argument(
+        '--sample_weight',
+        type=float,
+        default=1.0,
+        help="Weights for sample variation compared to demonstration"
+    )
+    parser.add_argument(
+        '--direct_variate',
+        type=str2bool,
+        required=False,
+        help="Whether to use candidate variations"
+    )
+    parser.add_argument(
         '--use_public_data',
         type=str2bool,
         default=False,
-        help="Whether there is public data")
+        help="Whether to use public data")
     parser.add_argument(
         '--public_data_folder',
         type=str,
@@ -35,6 +68,7 @@ def parse_args():
     parser.add_argument(
         '--epsilon',
         type=float,
+        default=0.0,
         required=False)
     parser.add_argument(
         '--delta',
@@ -42,26 +76,37 @@ def parse_args():
         type=float,
         required=False)
     parser.add_argument(
-            '--device',
+        '--device',
         type=int,
         required=True)
     parser.add_argument(
-            '--save_samples_live',
+        '--save_samples_live',
         action='store_true')
     parser.add_argument(
-            '--live_loading_target',
+        '--save_samples_live_freq',
+        type=int,
+        required=False,
+        default=np.inf,
+        help="Live saving Frequency")
+    parser.add_argument(
+        '--live_loading_target',
         type=str,
         required=False)
     parser.add_argument(
+        '--demonstration',
+        type=int,
+        required=False,
+        default=0)
+    parser.add_argument(
         '--modality',
         type=str,
-        choices=['image', 'text'], #Tabular: text
+        choices=['image', 'text', 'time-series'], #Tabular: text
         required=True)
     parser.add_argument(
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2'], #Tabular_1:Chatgpt
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2'], #Tabular_1:Chatgpt
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',
@@ -73,6 +118,12 @@ def parse_args():
         type=str,
         default="",
         help='Path to the data checkpoint')
+    parser.add_argument(
+        '--count_checkpoint_path',
+        type=str,
+        default="",
+        help="Path to the count checkpoint"
+    )
     parser.add_argument(
         '--data_checkpoint_step',
         type=int,
@@ -88,6 +139,11 @@ def parse_args():
         type=str,
         default='0,'*9 + '0',
         help='Variation degree at each iteration')
+    parser.add_argument(
+        '--adaptive_variation_degree',
+        type=str2bool,
+        default=False
+    )
     parser.add_argument(
         '--num_fid_samples',
         type=int,
@@ -105,16 +161,16 @@ def parse_args():
         required=False,
         help='Noise multiplier for DP NN histogram')    #noise_multiplier => how??
     parser.add_argument(
-        '--lookahead_degree',
+        '--num_candidate',
         type=int,
         default=0,
-        help=('Lookahead degree for computing distances between private and '  #
+        help=('candidate degree for computing distances between private and '  #
               'generated images'))
     parser.add_argument(
         '--feature_extractor',
         type=str,
         default='clip_vit_b_32',
-        choices=['bert_base_nli_mean_tokens', 'inception_v3', 'clip_vit_b_32', 'original'], 
+        choices=['bert_base_nli_mean_tokens', 'all_mpnet_base_v2', 'inception_v3', 'clip_vit_b_32', 'original'], 
         help='Which image feature extractor to use')
     parser.add_argument(
         '--num_nearest_neighbor',
@@ -125,7 +181,7 @@ def parse_args():
         '--nn_mode',
         type=str,
         default='L2',
-        choices=['L2', 'IP'],
+        choices=['L2', 'IP', 'cosine'],
         help='Which distance metric to use in DP NN histogram')   ##Bert랑 같이 similarty로 갈지 논의
     parser.add_argument(
         '--private_image_size',
@@ -227,6 +283,10 @@ def parse_args():
     live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
+    if args.direct_variate:
+        assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
+    if args.loser_lower_bound == 0:
+        args.loser_lower_bound = args.num_samples_schedule[0] / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
@@ -235,17 +295,11 @@ def parse_args():
     if len(args.num_samples_schedule) != len(args.variation_degree_schedule):
         raise ValueError('The length of num_samples_schedule and '
                          'variation_degree_schedule should be the same')
-
+    if args.sample_weight < 1:
+        assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
-    api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target)
+    api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
     return args, api
-
-
-def log_count(count, clean_count, path):
-    dirname = os.path.dirname(path)
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
-    np.savez(path, count=count, clean_count=clean_count)
 
 
 def round_to_uint8(image):
@@ -299,9 +353,15 @@ def main():
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     setup_logging(os.path.join(args.result_folder, 'log.log'))
+    if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
+        logging.info("You set it non-dp. Privacy parameters are ignored.")
+        args.direct_variate = True
+        args.adaptive_variation_degree = True
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
+
     metric = "FID" if args.num_private_samples > 2048 else "KID"
+    rng = np.random.default_rng(args.random_seed)
 
     all_private_samples, all_private_labels = load_private_data(
         data_dir=args.data_folder,
@@ -342,42 +402,54 @@ def main():
             device=f'cuda:{args.device}',
             metric=metric)
 
+    num_samples = args.num_samples_schedule[0]
+    num_samples_per_class = num_samples // private_num_classes
+
     # Generating initial samples.
     if args.data_checkpoint_path != '':
         logging.info(
             f'Loading data checkpoint from {args.data_checkpoint_path}')
         samples, additional_info = load_samples(args.data_checkpoint_path)
+        if args.direct_variate:
+            assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
+            (count, accum_loser) = load_count(args.count_checkpoint_path)
+            assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
+            diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
+            first_vote_only = diversity > args.diversity_lower_bounnd
         if args.data_checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
         start_t = args.data_checkpoint_step + 1
-    elif args.use_public_data:
-        logging.info(f'Using public data in {args.public_data_folder} as initial samples')
-        samples, additional_info = load_public_data(
-            data_folder=args.public_data_folder,
-            modality=args.modality,
-            num_public_samples=args.num_samples_schedule[0],
-            prompt=args.initial_prompt)
-        start_t = 1
     else:
-        logging.info('Generating initial samples')
-        samples, additional_info = api.random_sampling(
-            prompts=args.initial_prompt,
-            num_samples=args.num_samples_schedule[0],
-            size=args.image_size)
-        logging.info(f"Generated initial samples: {len(samples)}")
-        log_samples(
-            samples=samples,
-            additional_info=additional_info,
-            folder=f'{args.result_folder}/{0}',
-            plot_samples=args.plot_images,
-            modality=args.modality)
-        if args.data_checkpoint_step >= 0:
-            logging.info('Ignoring data_checkpoint_step')
-        start_t = 1
-
+        accum_loser = np.full((private_num_classes, num_samples), False)
+        diversity = np.full((private_num_classes), 1.0)
+        first_vote_only = np.full((private_num_classes), True)
+        if args.use_public_data:
+            logging.info(f'Using public data in {args.public_data_folder} as initial samples')
+            samples, additional_info = load_public_data(
+                data_folder=args.public_data_folder,
+                modality=args.modality,
+                num_public_samples=args.num_samples_schedule[0],
+                prompt=args.initial_prompt)
+            start_t = 1
+        else:
+            logging.info('Generating initial samples')
+            samples, additional_info = api.random_sampling(
+                prompts=args.initial_prompt,
+                num_samples=args.num_samples_schedule[0],
+                size=args.image_size)
+            logging.info(f"Generated initial samples: {len(samples)}")
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{args.result_folder}/{0}',
+                plot_samples=args.plot_images,
+                modality=args.modality)
+            if args.data_checkpoint_step >= 0:
+                logging.info('Ignoring data_checkpoint_step')
+            start_t = 1
     if args.compute_fid:
         logging.info(f'Computing {metric}')
-        if args.modality == 'text':
+        if args.modality == 'text' or args.modality == 'time-series':
                 tokens = [tokenize(args.fid_model_name, sample) for sample in samples]
                 tokens = np.array(tokens)
         else:
@@ -399,32 +471,98 @@ def main():
         log_fid(args.result_folder, fid, 0)
 
     T = len(args.num_samples_schedule)
-    if args.epsilon is not None:
+    if args.epsilon > 0 and args.dp:
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
         logging.info(f"Expected privacy cost per t: {args.epsilon:.2f}")
+
     for t in range(start_t, T):
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
-        if args.lookahead_degree == 0:
+        if args.num_candidate == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
-            logging.info('Running image variation')
+            # adaptive variation degree - count 정보가 있을 때만 적용
+            if (args.adaptive_variation_degree) and ('count' in vars()):
+                logging.info("Calculating adaptive variation degree")
+                logging.info(f"Maximum degree for t={t}: {args.variation_degree_schedule[t]:.2f}")
+                variation_degree = []
+                for class_i in private_classes:
+                    # count: (Nsyn)
+                    # samples: (Nsyn, ~)
+                    sub_count = count[
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                    sub_num_vote = all_private_features[
+                        all_private_labels == class_].shape[0]
+                    sub_ratio = np.divide(sub_count, sub_num_vote)
+                    share = 1 - np.clip(sub_ratio, 0, 0.9)
+                    sub_degree = np.multiply(share, args.variation_degree_schedule[t])
+                    variation_degree.append(sub_degree)
+                variation_degree = np.concatenate(variation_degree)
+                logging.info(f'Largest variation degrees: {np.flip(np.sort(variation_degree))[:50]}')
+            else:
+                variation_degree = args.variation_degree_schedule[t]     
+                    
+            # demonstration
+            if args.sample_weight < 1:
+                demo_indices = []  # (Nsyn * demonstrations)
+                logging.info('Getting demonstrations')
+                for class_i in private_classes:
+                    if 'count' in vars():
+                        # count 정보가 있는 경우 이를 활용
+                        # (Nsyn)
+                        sub_count = count[
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                        sub_losers = accum_loser[class_i, 
+                            num_samples_per_class * class_i:
+                            num_samples_per_class * (class_i + 1)]
+                        sub_count[sub_losers] = 0
+                        
+                    else:
+                        # count 정보가 없는 경우 random으로 뽑기
+                        # (Nsyn)
+                        sub_count = np.ones(shape=(num_samples_per_class))
+
+                    # Nsyn >> demonstration
+                    for _ in range(num_samples_per_class):
+                        sub_indices = rng.choice(
+                            np.arange(num_samples_per_class * class_i,
+                                    num_samples_per_class * (class_i + 1)),
+                            size=args.demonstration,
+                            p=sub_count / np.sum(sub_count),
+                            replace=False)
+                        demo_indices.append(sub_indices)
+                demo_indices = np.concatenate(demo_indices)
+                demo_samples = samples[demo_indices]
+                shape = samples.shape
+                demo_shape = (shape[0], args.demonstration) + shape[1:]
+                demo_samples = demo_samples.reshape(demo_shape)
+                logging.info(f'Demonstration samples shape: {demo_samples.shape}')
+            else:
+                demo_samples = None
+            logging.info('Running sample variation')
             packed_samples = api.variation(
                 samples=samples,
                 additional_info=additional_info,
-                num_variations_per_sample=args.lookahead_degree,
+                num_variations_per_sample=args.num_candidate,
                 size=args.image_size,
-                variation_degree=args.variation_degree_schedule[t],
-                t=t)
-        if args.modality == 'text':
+                variation_degree=variation_degree,
+                t=t,
+                candidate=True,
+                demo_samples=demo_samples,
+                sample_weight=args.sample_weight)
+            
+        if args.modality == 'text' or args.modality == 'time-series':
             packed_tokens = []
             for packed_sample in packed_samples:
                 tokens = [tokenize(args.feature_extractor, t) for t in packed_sample]
                 sub_tokens = np.array(tokens)
                 packed_tokens.append(sub_tokens)
             packed_tokens = np.array(packed_tokens)
+        
         else:
             packed_tokens = packed_samples
         packed_features = []
@@ -442,27 +580,61 @@ def main():
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
             packed_features.append(sub_packed_features)
-        packed_features = np.mean(packed_features, axis=0)
+        if args.direct_variate:  # candidate로 생성한 variation을 사용할 경우
+            # packed_features shape: (N_syn * num_candidate, embedding)
+            packed_features = np.concatenate(packed_features, axis=0)
+        else:  # 기존 DPSDA
+            # packed_features shape: (N_syn, embedding)
+            packed_features = np.mean(packed_features, axis=0)
         logging.info('Computing histogram')
         count = []
         for class_i, class_ in enumerate(private_classes):
-            sub_count, sub_clean_count = dp_nn_histogram(
-                public_features=packed_features[
-                    num_samples_per_class * class_i:
-                    num_samples_per_class * (class_i + 1)],
-                private_features=all_private_features[
-                    all_private_labels == class_],
-                epsilon=args.epsilon,
-                delta=args.delta,
-                noise_multiplier=args.noise_multiplier,
-                num_nearest_neighbor=args.num_nearest_neighbor,
-                mode=args.nn_mode,
-                threshold=args.count_threshold,
-                t=t,
-                result_folder=args.result_folder)
+            if args.direct_variate:
+                num_samples_per_class_w_candidate = num_samples_per_class * args.num_candidate
+                dim = args.num_candidate
+            else:
+                dim = 0
+                num_samples_per_class_w_candidate = num_samples_per_class
+            if args.dp:
+                logging.info(f"Current diversity: {diversity[class_i]}")
+                sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
+                    synthetic_features=packed_features[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    private_features=all_private_features[
+                        all_private_labels == class_],
+                    epsilon=args.epsilon,
+                    delta=args.delta,
+                    noise_multiplier=args.noise_multiplier,
+                    num_nearest_neighbor=args.num_nearest_neighbor,
+                    mode=args.nn_mode,
+                    threshold=args.count_threshold,
+                    dim=dim,
+                    rng=rng,
+                    diversity=diversity[class_i],
+                    diversity_lower_bound=args.diversity_lower_bound,
+                    loser_lower_bound=args.loser_lower_bound,
+                    first_vote_only=first_vote_only[class_i])
+                accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
+                updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
+                logging.info(f"Diversity loss: {diversity[class_i] - updated_div}")
+                diversity[class_i] = updated_div
+                first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
+            else:
+                sub_count, sub_losers = nn_histogram(
+                    synthetic_features=packed_features[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    private_features=all_private_features[
+                        all_private_labels == class_],
+                    mode=args.nn_mode,
+                    dim=dim
+                )
+                sub_clean_count = sub_count.copy()
             log_count(
                 sub_count,
                 sub_clean_count,
+                None,
                 f'{args.result_folder}/{t}/count_class{class_}.npz')
             count.append(sub_count)
         count = np.concatenate(count)
@@ -470,49 +642,93 @@ def main():
             for class_i, class_ in enumerate(private_classes):
                 visualize(
                     samples=samples[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     packed_samples=packed_samples[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     count=count[
-                        num_samples_per_class * class_i:
-                        num_samples_per_class * (class_i + 1)],
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
                     folder=f'{args.result_folder}/{t}',
                     suffix=f'class{class_}')
         logging.info('Generating new indices')
         assert args.num_samples_schedule[t] % private_num_classes == 0
         new_num_samples_per_class = (
             args.num_samples_schedule[t] // private_num_classes)
-        new_indices = []
-        for class_i in private_classes:
-            sub_count = count[
-                num_samples_per_class * class_i:
-                num_samples_per_class * (class_i + 1)]
-            sub_new_indices = np.random.choice(
-                np.arange(num_samples_per_class * class_i,
-                          num_samples_per_class * (class_i + 1)),
-                size=new_num_samples_per_class,
-                p=sub_count / np.sum(sub_count))
-            new_indices.append(sub_new_indices)
-        new_indices = np.concatenate(new_indices)
-        new_samples = samples[new_indices]
-        new_additional_info = additional_info[new_indices]
-        logging.debug(f"new_indices: {new_indices}")
-        logging.info('Generating new samples')
-        new_new_samples = api.variation(
-            samples=new_samples,
-            additional_info=new_additional_info,
-            num_variations_per_sample=1,
-            size=args.image_size,
-            variation_degree=args.variation_degree_schedule[t],
-            t=t)
-        new_new_samples = np.squeeze(new_new_samples, axis=1)
-        new_new_additional_info = new_additional_info
+
+        if args.direct_variate:
+            selected = []
+            candidate = []
+            for class_i in private_classes:
+                class_indices = np.arange(num_samples_per_class * class_i, num_samples_per_class * (class_i + 1))
+                sub_count = count[class_indices]
+                sub_flat_count = sub_count.flatten()
+                for i in range(sub_count.shape[0]):
+                    # loser
+                    # 패자부할전을 할 경우에 이 단계에서 loser로 분류되는 샘플은 없으므로 첫 번째 투표만 하는 경우에만 해당
+                    if np.all(sub_count[i] == 0):
+                        flat_idx = rng.choice(
+                            np.arange(num_samples_per_class_w_candidate),
+                            size=1,
+                            p=sub_flat_count / np.sum(sub_flat_count)
+                        )[0]
+                        idx = [class_indices[flat_idx // args.num_candidate], flat_idx % args.num_candidate]
+                        logging.info(f"Winner selected in place of loser at {i}: {[flat_idx // args.num_candidate, flat_idx % args.num_candidate]}")
+                    # winner
+                    else:
+                        cand_idx = rng.choice(
+                            np.arange(args.num_candidate),
+                            size=1,
+                            p=sub_count[i] / np.sum(sub_count[i])
+                        )[0]
+                        candidate.append([i, cand_idx])
+                        idx = [class_indices[i], cand_idx]
+                    selected.append(idx)
+            selected = np.stack(selected)
+            logging.info(f"Selected candiates: {candidate}")
+            new_new_samples = packed_samples[selected[:, 0], selected[:, 1]]
+            new_new_additional_info = additional_info
+            new_new_count = count[selected[:, 0], selected[:, 1]]
+            count = new_new_count
+            log_count(
+                count,
+                None,
+                accum_loser,
+                f'{args.result_folder}/{t}/count.npz')
+        else:
+            new_indices = []
+            for class_i in private_classes:
+                sub_count = count[
+                    num_samples_per_class * class_i:
+                    num_samples_per_class * (class_i + 1)]
+                sub_indices = rng.choice(
+                    np.arange(num_samples_per_class * class_i,
+                            num_samples_per_class * (class_i + 1)),
+                    size=new_num_samples_per_class,
+                    p=sub_count / np.sum(sub_count))
+                    
+
+                new_indices.append(sub_indices)
+            new_indices = np.concatenate(new_indices)
+            new_samples = samples[new_indices]
+            new_additional_info = additional_info[new_indices]
+            logging.debug(f"new_indices: {new_indices}")
+            logging.info('Generating new samples')
+            new_new_samples = api.variation(
+                samples=new_samples,
+                additional_info=new_additional_info,
+                num_variations_per_sample=1,
+                size=args.image_size,
+                variation_degree=variation_degree,
+                t=t,
+                candidate=False)
+            new_new_samples = np.squeeze(new_new_samples, axis=1)
+            new_new_additional_info = new_additional_info
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')
-            if args.modality == 'text':
+            if args.modality == 'text' or args.modality == 'time-series':
                 new_new_tokens = [tokenize(args.fid_model_name, sample) for sample in new_new_samples]
                 new_new_tokens = np.array(new_new_tokens)
             else:

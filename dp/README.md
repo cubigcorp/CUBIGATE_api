@@ -1,6 +1,29 @@
 # DPSDA
 [DPSDA Github](https://github.com/microsoft/DPSDA) 참고
 
+## 2024.01.04 Updates
+### Parameters
+* `dp`: DP 적용 여부, default=True
+* `random_seed`: 난수 조절, default=2024
+* `sample_weight`: sample-based variation에 대한 가중치, default=1.0
+* `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, default=0
+* `direct_variate`: 1226 그거 적용 여부, default=False
+* `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, default=False
+* `diversity_lower_bound`: 패자부할전을 진행하지 않기 위한 다양성 하한선, default = 0.5
+* `loser_lower_bound`: 패자로 분류되기 위한 투표수 하한선, default = N_syn / k
+
+### Setting examples
+* Vanila DPSDA: 위의 파라미터 모두 default로
+* sample-based: `direct_variate true`
+* demonstration-based: `direct_variate true`, `sample_weight 0`, `demonstration [DEMO]`
+* mixed: `direct_variate true`, `sample_weight [W]`, `demonstration [DEMO]`
+  * sample_weight < 1일 때 demonstration이 0이면 assert error
+* non-DP: `dp false`
+  * epsilon, delta, threshold는 따로 설정하였어도 0으로 변경
+  * `direct_variate`와 `adaptive_variation_degree`도 True로 변경
+
+---
+
 ## 모달리티 및 API 추가 시 변경해야 할 것들
 * *!!* 가 달려 있는 항목은 API별 한 번씩 작업해야 함.
 * *!!* 가 달려 있지 않는 항목은 모달리티별 한 번씩 작업해야 함.
@@ -39,6 +62,7 @@
 
 ## Sampling/variation 도중에 중단된 실험 재개하기
 1. `--save_samples_live` 추가하여 중간 결과물을 저장하도록 설정
-   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{lookahead}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
+   * `--result_folder`로 지정한 경로에 `initial_{iteration}_samples.npz`와 `variation_{variation}_{candidate}_samples.npz`, `sub_variation_{variation}_{iteration}`로 저장됨
 2. `--live_loading_target`으로 불러올 중간 결과물의 경로 지정
-   * 불러올 중간 결과물이 없다면 필요 없음 
+   * 불러올 중간 결과물이 없다면 필요 없음
+3. `--save_samples_live_freq`로 저장 주기(배치 단위) 설정

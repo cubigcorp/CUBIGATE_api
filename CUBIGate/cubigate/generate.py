@@ -144,6 +144,7 @@ class CubigDPGenerator():
             Which distance metric to use in DP NN histogram
             
         """
+        print(api_args)
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
         
@@ -172,13 +173,13 @@ class CubigDPGenerator():
         logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
         # 4-a. Load data checkpoint if any
-        if data_checkpoint_path != '':
+        if checkpoint_path != '':
             logging.info(
-                f'Loading data checkpoint from {data_checkpoint_path}')
-            samples, additional_info = load_samples(data_checkpoint_path)
-            if data_checkpoint_step < 0:
+                f'Loading data checkpoint from {checkpoint_path}')
+            samples, additional_info = load_samples(checkpoint_path)
+            if checkpoint_step < 0:
                 raise ValueError('data_checkpoint_step should be >= 0')
-            start_t = data_checkpoint_step + 1
+            start_t = checkpoint_step + 1
         # 4-b. Generate initial population
         else:
             logging.info('Generating initial samples')
@@ -192,7 +193,7 @@ class CubigDPGenerator():
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/{0}',
                 plot_samples=plot_images)
-            if data_checkpoint_step >= 0:
+            if checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step')
             start_t = 1
 

@@ -1,6 +1,5 @@
 import torch
 import clip
-from cleanfid.fid import get_batch_features
 from dpsda.dataset import ResizeDataset, EXTENSIONS
 import zipfile
 from glob import glob
@@ -10,6 +9,15 @@ from tqdm import tqdm
 import random
 import clip
 from sentence_transformers import SentenceTransformer
+from dpsda.tokenizer import detokenize
+
+def get_batch_features(batch, model, device):
+    with torch.no_grad():
+        feat = model(batch.to(device))
+    if isinstance(feat, torch.Tensor):
+        return feat.detach().cpu().numpy()
+    else:
+        return feat
 
 def get_folder_features(fdir, modality: str, model=None, num_workers=12, num=None,
                         shuffle=False, seed=0, batch_size=128, device=torch.device("cuda"),
@@ -70,14 +78,15 @@ class CLIP_fx_txt():
             z = self.model.encode_text(txt)
         return z
     
-class BERT_fx_txt():
+class Sentence_fx_txt():
     def __init__(self, name="base-nli-mean-tokens", device="cuda"):
         self.model = SentenceTransformer(name)
         self.model.to(device)
         self.model.eval()
-        self.name = "bert_"+name.lower().replace("-","_").replace("/","_")
-    
-    def __call__(self, txt):
+        self.name = name
+
+    def __call__(self, token):
+        txt = detokenize(self.name, token)
         with torch.no_grad():
             z = self.model.encode(txt)
         return z

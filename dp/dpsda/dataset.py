@@ -103,10 +103,5 @@ class TextDataset(Dataset):
         with bf.BlobFile(path, 'r') as f:
             lines = f.read()
         arr = tokenize(self.model, lines)
-        # if self.model == "bert_base_nli_mean_tokens":
-        #     tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/bert-base-nli-mean-tokens')
-        #     arr=tokenizer.encode_plus(lines, truncation=True)
-        # elif self.model == 'clip_vit_b_32':
-        #     arr = clip.tokenize(lines, truncate=True).numpy().squeeze()
         label = self.local_classes[idx]
         return arr, label

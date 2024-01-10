@@ -10,6 +10,8 @@ class API(ABC):
         self._result_folder = None
         self._live = -1
         self._live_loading_target = None
+        self._modality = None
+        self._save_freq = 0
 
     @staticmethod
     def command_line_parser():
@@ -20,7 +22,7 @@ class API(ABC):
         return parser
 
     @classmethod
-    def from_command_line_args(cls, args, result_folder, live_loading_target):
+    def from_command_line_args(cls, args, result_folder, live_loading_target, save_samples_live_feq, modality):
         """
         Creating the API from command line arguments.
 
@@ -39,6 +41,8 @@ class API(ABC):
         if live_loading_target is not None:
             api._live = 1
             api._live_loading_target = live_loading_target
+        api._modality = modality
+        api._save_freq = save_samples_live_feq
         return api
 
     @abstractmethod
@@ -70,7 +74,7 @@ class API(ABC):
 
     @abstractmethod
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree=None, t=None):
+                        num_variations_per_sample, size, variation_degree=None, t=None, demo=0):
         """
         Generates a specified number of variations for each image in the input
         array.

@@ -1,6 +1,7 @@
 import os
 import imageio
 import numpy as np
+from typing import Optional
 
 def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, save_npz=True, additional_info=None, prefix: str=''):
     if not os.path.exists(folder):
@@ -19,3 +20,10 @@ def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, sa
                     f.write(samples[i])
             else:
                 raise Exception(f'Unknown modality {modality}')
+
+
+def log_count(count: np.ndarray, clean_count: Optional[np.ndarray], loser_filter: Optional[np.ndarray], path: str):
+    dirname = os.path.dirname(path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    np.savez(path, count=count, clean_count=clean_count, losers = loser_filter)

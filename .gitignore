@@ -22,3 +22,5 @@ result/**/*.npz
 dp/result/**/*.npz
 CUBIGate/result/**/*_debug.npz
 *.log
+*.sh
+*.json
