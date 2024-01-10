@@ -16,6 +16,10 @@ def argument():
         help="Whether to generate new samples after train the generator"
     )
     parser.add_argument(
+        '--prompt',
+        type=str
+    )
+    parser.add_argument(
         '--epsilon',
         type=float,
         required=False)
@@ -46,10 +50,8 @@ def argument():
         default=-1,
         help='Iteration of the data checkpoint')
     parser.add_argument(
-        '--num_samples_schedule',
-        type=str,
-        default='50000,'*9 + '50000',
-        help='Number of samples to generate at each iteration')
+        '--num_samples',
+        type=int)
     parser.add_argument(
         '--variation_degree_schedule',
         type=str,
@@ -61,7 +63,7 @@ def argument():
         default=50000,
         help='Number of original data to load')
     parser.add_argument(
-        '--num_samples',
+        '--num_samples_generate',
         type=int,
         default=50000,
         help='Number of samples to generate')
@@ -142,13 +144,10 @@ def argument():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, api_args = parser.parse_known_args()
-    args.num_samples_schedule = list(map(
-        int, args.num_samples_schedule.split(',')))
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
         variation_degree_type, args.variation_degree_schedule.split(',')))
-    assert len(args.num_samples_schedule) == len(args.variation_degree_schedule)
     return args, api_args
 
 def main():
@@ -163,21 +162,22 @@ def main():
         feature_extractor_batch_size=args.feature_extractor_batch_size,
         org_img_size=args.org_img_size,
         conditional=args.conditional,
-        num_org_data=args.num_org_data
+        num_org_data=args.num_org_data,
+        prompt = args.prompt
     )
     if args.train:
         generator.train(
+            iteration=2,
             data_folder=args.data_folder,
-            data_checkpoint_path=args.data_checkpoint_path,
-            data_checkpoint_step=args.data_checkpoint_step,
-            initial_prompt=args.initial_prompt,
-            num_samples_schedule=args.num_samples_schedule,
+            checkpoint_path=args.data_checkpoint_path,
+            checkpoint_step=args.data_checkpoint_step,
+            num_samples=args.num_samples,
             variation_degree_schedule=args.variation_degree_schedule,
-            lookahead_degree=args.lookahead_degree,
+            num_candidate=args.lookahead_degree,
             img_size=args.img_size,
             epsilon=args.epsilon,
             delta=args.delta,
-            count_threshold=args.count_threshold,
+            threshold=args.count_threshold,
             plot_images=args.plot_images,
             nn_mode=args.nn_mode,
             api_args=api_args
@@ -187,7 +187,7 @@ def main():
         generator.generate(
             base_data=args.data_checkpoint_path,
             img_size=args.img_size,
-            num_samples=args.num_samples,
+            num_samples=args.num_samples_generate,
             variation_degree=args.variation_degree,
             plot_images=args.plot_images,
             api_args=api_args

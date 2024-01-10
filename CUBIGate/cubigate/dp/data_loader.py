@@ -55,5 +55,4 @@ def load_data(data_dir, batch_size, image_size, class_cond,
 def load_samples(path):
     data = np.load(path)
     samples = data['samples']
-    additional_info = data['additional_info']
-    return samples, additional_info
+    return samples

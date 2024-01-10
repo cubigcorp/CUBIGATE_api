@@ -1,14 +1,15 @@
-python pre_main.py \
+python main_for_bash.py \
+--train \
 --generate \
 --count_threshold 2.0 \
 --lookahead_degree 2 \
 --img_size 512x512 \
 --org_img_size 512 \
---data_folder /home/minsy/CUBIG/dp/data/cookie \
---num_samples_schedule 10,10 \
+--data_folder ./input_data/cookie \
+--num_samples 10 \
 --variation_degree_schedule 1.0,0.98 \
 --num_org_data 10 \
---initial_prompt "A photo of ragdoll cat" \
+--prompt "A photo of ragdoll cat" \
 --result_folder result/cookie \
 --tmp_folder /tmp/result/cookie \
 --api stable_diffusion \
@@ -21,6 +22,5 @@ python pre_main.py \
 --variation_num_inference_steps 20 \
 --variation_batch_size 10 \
 --epsilon 1.0 \
---num_samples 2 \
+--num_samples_generate 2 \
 --variation_degree 0.5 \
---data_checkpoint_path /home/minsy/CUBIG/CUBIGate/result/cookie/1/_samples.npz 

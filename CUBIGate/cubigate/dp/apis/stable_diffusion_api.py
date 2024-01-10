@@ -23,6 +23,7 @@ class StableDiffusionAPI(API):
                  variation_guidance_scale,
                  variation_num_inference_steps,
                  variation_batch_size,
+                 prompt,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_checkpoint = random_sampling_checkpoint
@@ -47,11 +48,17 @@ class StableDiffusionAPI(API):
                 torch_dtype=torch.float16)
         self._variation_pipe.safety_checker = None
         self._variation_pipe = self._variation_pipe.to(dev())
+        self.prompt = prompt
 
     @staticmethod
     def command_line_parser():
         parser = super(
             StableDiffusionAPI, StableDiffusionAPI).command_line_parser()
+        parser.add_argument(
+            '--prompt',
+            type=str,
+            help="If the API accepts a prompt, the initial samples will be generated with the prompt"
+        )
         parser.add_argument(
             '--random_sampling_checkpoint',
             type=str,
@@ -95,7 +102,7 @@ class StableDiffusionAPI(API):
             help='The batch size for variation API')
         return parser
 
-    def random_sampling(self, num_samples, size, prompts):
+    def random_sampling(self, num_samples, size):
         """
         Generates a specified number of random image samples based on a given
         prompt and size using OpenAI's Image API.
@@ -107,9 +114,6 @@ class StableDiffusionAPI(API):
                 The size of the generated images in the format
                 "widthxheight". Options include "256x256", "512x512", and
                 "1024x1024".
-            prompts (List[str]):
-                The text prompts to generate images from. Each promot will be
-                used to generate num_samples/len(prompts) number of samples.
 
         Returns:
             numpy.ndarray:
@@ -122,29 +126,23 @@ class StableDiffusionAPI(API):
         """
         max_batch_size = self._random_sampling_batch_size
         images = []
-        return_prompts = []
         width, height = list(map(int, size.split('x')))
-        for prompt_i, prompt in enumerate(prompts):
-            num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
-            num_iterations = int(np.ceil(
-                float(num_samples_for_prompt) / max_batch_size))
-            for iteration in tqdm(range(num_iterations)):
-                batch_size = min(
-                    max_batch_size,
-                    num_samples_for_prompt - iteration * max_batch_size)
-                images.append(_round_to_uint8(self._random_sampling_pipe(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    num_inference_steps=(
-                        self._random_sampling_num_inference_steps),
-                    guidance_scale=self._random_sampling_guidance_scale,
-                    num_images_per_prompt=batch_size,
-                    output_type='np').images))
-            return_prompts.extend([prompt] * num_samples_for_prompt)
-        return np.concatenate(images, axis=0), np.array(return_prompts)
+        iteration = int(np.ceil(
+            float(num_samples) / max_batch_size))
+        for i in range(iteration):
+            batch_size = min(max_batch_size, (num_samples - max_batch_size * i))
+            images.append(_round_to_uint8(self._random_sampling_pipe(
+                prompt=self.prompt,
+                width=width,
+                height=height,
+                num_inference_steps=(
+                    self._random_sampling_num_inference_steps),
+                guidance_scale=self._random_sampling_guidance_scale,
+                num_images_per_prompt=batch_size,
+                output_type='np').images))
+        return np.concatenate(images, axis=0)
 
-    def variation(self, samples, additional_info,
+    def variation(self, samples,
                         num_variations_per_sample, size, variation_degree):
         """
         Generates a specified number of variations for each image in the input
@@ -181,13 +179,12 @@ class StableDiffusionAPI(API):
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
                 samples=samples,
-                prompts=list(additional_info),
                 size=size,
                 variation_degree=variation_degree)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples, prompts, size, variation_degree):
+    def _variation(self, samples, size, variation_degree):
         width, height = list(map(int, size.split('x')))
         variation_transform = T.Compose([
             T.Resize(
@@ -205,15 +202,15 @@ class StableDiffusionAPI(API):
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
         for iteration in tqdm(range(num_iterations), leave=False):
+            batch_size = min(max_batch_size, (samples.shape[0] - max_batch_size * iteration))
             variations.append(self._variation_pipe(
-                prompt=prompts[iteration * max_batch_size:
-                               (iteration + 1) * max_batch_size],
+                prompt=self.prompt,
                 image=samples[iteration * max_batch_size:
                              (iteration + 1) * max_batch_size],
                 num_inference_steps=self._variation_num_inference_steps,
                 strength=variation_degree,
                 guidance_scale=self._variation_guidance_scale,
-                num_images_per_prompt=1,
+                num_images_per_prompt=batch_size,
                 output_type='np').images)
         variations = _round_to_uint8(np.concatenate(variations, axis=0))
         return variations
