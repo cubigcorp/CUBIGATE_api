@@ -6,37 +6,31 @@ from typing import Dict, Optional
 import torch
 from dpsda.agm import get_sigma
 
-def revival(counts: np.ndarray, loser_filter: np.ndarray, synthetic_features: np.ndarray, num_candidate: int, index: faiss.Index):
+def revival(counts: np.ndarray, counts_1st_idx: np.ndarray, loser_filter: np.ndarray, synthetic_features: np.ndarray, num_candidate: int, index: faiss.Index):
     logging.info("Losers' revival started")
-    counts = counts.flatten()
-    sorted_idx = np.flip(np.argsort(counts))
-    winner_idx = [idx for idx in sorted_idx if counts[idx] > 0]
-    logging.info(f"Winners indices : {winner_idx}")
+    shares = counts[~loser_filter]
+    winner_filter = np.concatenate((~loser_filter, np.full((counts.shape[0], num_candidate -1), False)), axis=1)
 
-    shares = counts[winner_idx]
+    logging.info(f"Winners indices : {np.where(winner_filter)[0]}")
     logging.info(f"Winners' shares: {shares}")
     logging.info(f"Total vote: {sum(shares)}")
-    loser_idx = loser_filter.flatten().nonzero()[0]
-    losers = synthetic_features[loser_idx].reshape((-1, num_candidate, synthetic_features.shape[-1]))
-    winners = synthetic_features[winner_idx]
 
-    logging.info(f"Counting votes for {len(losers)} losers")
-    loser_counts = []
-    for loser in losers:
-        index.add(loser)
-        _, ids = index.search(winners, k=1)
-        weights = get_weights(ids.flatten(), shares)
-        count = get_count_flat(ids, num_candidate, verbose=0, weights=weights)
-        loser_counts.append(count)
+    winners = synthetic_features[winner_filter]
+    synthetic_features = synthetic_features.reshape((-1, num_candidate) + synthetic_features.shape[2:])
+
+    logging.info(f"Counting votes for losers")
+    for idx in range(counts.shape[0]):
+        if loser_filter[idx]:
+            index.add(synthetic_features[idx])
+            _, ids = index.search(winners, k=1)
+            weights = get_weights(ids.flatten(), shares)
+            count = get_count_flat(ids, num_candidate, verbose=0, weights=weights)
+            count_1st_idx = np.flip(np.argsort(count))[0]
+            counts[idx] = count[count_1st_idx]
+            counts_1st_idx[idx] = count_1st_idx
         index.reset()
-    loser_counts = np.stack(loser_counts)
-    logging.info(f"Counts for losers: {loser_counts}")
 
-    loser_idx = loser_idx.reshape((-1, num_candidate))
-    loser_idx = [idx[0] // num_candidate for idx in loser_idx]
-    counts = counts.reshape((-1, num_candidate))
-    counts[loser_idx] = loser_counts
-    return counts
+    return counts, counts_1st_idx
 
 
 def get_weights(ids: np.ndarray, share: np.ndarray) -> Dict:
@@ -100,19 +94,13 @@ def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neig
 
 
 def sanity_check(counts: np.ndarray) -> bool:
-    for idx in range(counts.shape[0]):
-        if np.all(counts[idx] == 0):
-            return False
-    return True
+    return len(counts) - np.count_nonzero(counts) == 0
 
 
-def get_losers(counts: np.ndarray, loser_lower_bound: float, num_candidate: int) -> np.ndarray:
+def get_losers(counts: np.ndarray, loser_lower_bound: float) -> np.ndarray:
     logging.info("Counting losers")
-    loser_idx = [[*range(idx * num_candidate, (idx + 1) * num_candidate)] for idx in range(counts.shape[0]) if np.sum(counts[idx]) < loser_lower_bound]
-    logging.info(f"Total losers: {len(loser_idx)}")
-    loser_idx = np.array(loser_idx).flatten()
-    counts = counts.flatten()
-    losers = np.array([idx in loser_idx for idx in range(counts.shape[0])]).reshape((-1, num_candidate)) 
+    losers = counts < loser_lower_bound
+    logging.info(f"Total losers: {losers.sum()}")
     return losers
 
 
@@ -166,15 +154,19 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
 
     if num_candidate > 0:
         index.reset()
-        losers = get_losers(counts, loser_lower_bound, num_candidate)
+        counts_1st_idx = np.flip(np.argsort(counts, axis=1), axis=1)[:, 0]
+        counts = counts[np.arange(counts.shape[0]), counts_1st_idx].reshape((-1, 1))  # (Nsyn, 1)
+        losers = get_losers(counts, loser_lower_bound).reshape((-1, 1))  # (Nsyn, 1)
         if losers.sum() == 0:
-            return counts, clean_count, losers
-        first_vote_only = diversity_check(losers, diversity, synthetic_features.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
+            return counts.flatten(), clean_count, losers, counts_1st_idx
+        counts[losers] = 0
+        first_vote_only = diversity_check(losers, diversity, counts.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
         if first_vote_only:
-            counts[losers] = 0
-            return counts, clean_count, losers
-        counts = revival(
+            return counts.flatten(), clean_count, losers, counts_1st_idx
+        synthetic_features = synthetic_features.reshape((counts.shape[0], num_candidate) + synthetic_features.shape[1:])  # (Nsyn, num_candidate, ~)
+        counts, counts_1st_idx = revival(
             counts=counts,
+            counts_1st_idx=counts_1st_idx,
             synthetic_features=synthetic_features,
             loser_filter=losers,
             num_candidate=num_candidate,
@@ -183,8 +175,9 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     else:
         losers = np.array([False for _ in counts])  # (Nsyn)
         losers = np.expand_dims(losers, axis=1)  # (Nsyn, 1)
+        counts_1st_idx = np.zeros_like(counts)
 
-    return counts, clean_count, losers
+    return counts.flatten(), clean_count, losers, counts_1st_idx
 
 
 def nn_histogram(synthetic_features, private_features, num_candidate: int, num_packing=1, num_nearest_neighbor=1, mode='L2'):

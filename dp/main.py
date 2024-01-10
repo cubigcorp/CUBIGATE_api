@@ -456,7 +456,7 @@ def main():
             size=args.sample_size,
             rng=rng
         )
-        all_private_features = all_private_samples
+        all_private_features = all_private_samples[:, :2]
     else:
         all_private_samples, all_private_labels = load_private_data(
             data_dir=args.data_folder,
@@ -546,7 +546,15 @@ def main():
             wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], 0, accum_loser.T.tolist())
 
         if args.experimental:
-            log_plot(all_private_samples, samples, args.sample_size, 0, args.result_folder)
+            log_plot(private_samples=all_private_samples,
+                     synthetic_samples=samples, 
+                     size=args.sample_size,
+                     step=0,
+                     dir=args.result_folder,
+                     ratio=args.toy_private_bounding_ratio,
+                     shape=args.toy_data_type[0],
+                    y_position=args.toy_data_type[1],
+                    x_position=args.toy_data_type[2],)
     
     
     if args.compute_fid:
@@ -674,7 +682,7 @@ def main():
 
         for i in range(packed_samples.shape[1]):
             if args.experimental:
-                sub_packed_features = packed_tokens[:, i]
+                sub_packed_features = packed_tokens[:, i, :2]
             else:
                 sub_packed_features = extract_features(
                     data=packed_tokens[:, i],
@@ -696,6 +704,7 @@ def main():
             packed_features = np.mean(packed_features, axis=0)
         logging.info('Computing histogram')
         count = []
+        count_1st_idx = []
         for class_i, class_ in enumerate(private_classes):
             if args.direct_variate:
                 num_samples_per_class_w_candidate = num_samples_per_class * args.num_candidate
@@ -705,7 +714,7 @@ def main():
                 num_samples_per_class_w_candidate = num_samples_per_class
             if args.dp:
                 logging.info(f"Current diversity: {diversity[class_i]}")
-                sub_count, sub_clean_count, sub_losers = dp_nn_histogram(
+                sub_count, sub_clean_count, sub_losers, sub_1st_idx = dp_nn_histogram(
                     synthetic_features=packed_features[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
@@ -747,7 +756,9 @@ def main():
                 None,
                 f'{args.result_folder}/{t}/count_class{class_}.npz')
             count.append(sub_count)
+            count_1st_idx.append(sub_1st_idx)
         count = np.concatenate(count)
+        count_1st_idx = np.concatenate(count_1st_idx)
         if args.modality == 'image':
             for class_i, class_ in enumerate(private_classes):
                 visualize(
@@ -769,37 +780,28 @@ def main():
 
         if args.direct_variate:
             selected = []
-            candidate = []
             for class_i in private_classes:
                 class_indices = np.arange(num_samples_per_class * class_i, num_samples_per_class * (class_i + 1))
                 sub_count = count[class_indices]
-                sub_flat_count = sub_count.flatten()
                 for i in range(sub_count.shape[0]):
                     # loser
                     # 패자부할전을 할 경우에 이 단계에서 loser로 분류되는 샘플은 없으므로 첫 번째 투표만 하는 경우에만 해당
-                    if np.all(sub_count[i] == 0):
-                        flat_idx = rng.choice(
-                            np.arange(num_samples_per_class_w_candidate),
+                    if sub_count[i] == 0:
+                        idx = rng.choice(
+                            np.arange(num_samples_per_class),
                             size=1,
-                            p=sub_flat_count / np.sum(sub_flat_count)
+                            p=sub_count / np.sum(sub_count)
                         )[0]
-                        idx = [class_indices[flat_idx // args.num_candidate], flat_idx % args.num_candidate]
-                        logging.info(f"Winner selected in place of loser at {i}: {[flat_idx // args.num_candidate, flat_idx % args.num_candidate]}")
+                        logging.info(f"Winner selected in place of loser at {i}: {idx}")
+                        idx = [class_indices[idx], count_1st_idx[class_indices[idx]]]
                     # winner
                     else:
-                        cand_idx = rng.choice(
-                            np.arange(args.num_candidate),
-                            size=1,
-                            p=sub_count[i] / np.sum(sub_count[i])
-                        )[0]
-                        candidate.append([i, cand_idx])
-                        idx = [class_indices[i], cand_idx]
+                        idx = [class_indices[i], count_1st_idx[class_indices[i]]]
                     selected.append(idx)
             selected = np.stack(selected)
-            logging.info(f"Selected candiates: {candidate}")
             new_new_samples = packed_samples[selected[:, 0], selected[:, 1]]
             new_new_additional_info = additional_info
-            new_new_count = count[selected[:, 0], selected[:, 1]]
+            new_new_count = count[selected[:,0]]
             count = new_new_count
             log_count(
                 count,
@@ -862,7 +864,16 @@ def main():
         additional_info = new_new_additional_info
 
         if args.experimental:
-            log_plot(all_private_samples, samples, args.sample_size, t, args.result_folder)
+            log_plot(private_samples=all_private_samples,
+                     synthetic_samples=samples, 
+                     size=args.sample_size,
+                     step=0,
+                     dir=args.result_folder,
+                     ratio=args.toy_private_bounding_ratio,
+                     shape=args.toy_data_type[0],
+                    y_position=args.toy_data_type[1],
+                    x_position=args.toy_data_type[2],)
+    
         else:
             log_samples(
                 samples=samples,

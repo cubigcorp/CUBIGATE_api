@@ -4,6 +4,9 @@ from typing import Literal, Optional, Tuple
 import numpy as np
 import wandb
 
+COLORS = {-1: 'blue', 0: 'green', 1: 'yellow', 2: 'purple', 3: 'teal', 4: 'olive', 
+          5: 'peru', 6: 'crimson', 7: 'orange', 8: 'black', 9: 'darkgreen'}
+
 
 def get_xy(position: str, ratio: float) -> float:
     if position == 'right' or position == 'upper':
@@ -17,13 +20,16 @@ def get_xy(position: str, ratio: float) -> float:
     return p
 
 
-def get_samples(shape: str, rng: np.random.Generator, num_data: int, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
+def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive: int = 10, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
     assert (bounding is None) ^ (size is None)
     if bounding is not None:
         x, y, w, h = bounding
     else:
         x = y = 0
         w, h = list(map(int, size.split('x')))
+
+    other_color_idx = rng.choice(num_data, size=distinctive).tolist()
+    colors = np.array([other_color_idx.index(idx) if idx in other_color_idx else -1 for idx in range(num_data)]).reshape((-1, 1))
     if shape == 'square':
         x_values = rng.uniform(low=x, high=x + w, size=num_data)
         y_values = rng.uniform(low=y, high=y + h, size=num_data)
@@ -40,31 +46,49 @@ def get_samples(shape: str, rng: np.random.Generator, num_data: int, bounding: O
             samples.append(sample)
     else:
         raise ValueError(f"Unknown shape: {shape}")
-    samples = np.round(np.stack(samples))
+
+    samples = np.concatenate((np.stack(samples), colors), axis=1)
     return samples
-            
+
+
+def get_bounding(y_position: str, x_position: str, y_dim: int, x_dim: int, ratio: float) -> Tuple:
+    y = int(get_xy(y_position, ratio) * y_dim)
+    x = int(get_xy(x_position, ratio) * x_dim)
+    w = int(ratio * x_dim)
+    h = int(ratio * y_dim)
+    return (x, y, w, h)
         
 
 def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position: str, num_data: int, num_labels: int, ratio: float, rng: np.random.Generator, size: str) -> np.ndarray:
     assert 0 <= ratio <= 1
     x_dim, y_dim = list(map(int, size.split('x')))
-    y = int(get_xy(y_position, ratio) * y_dim)
-    x = int(get_xy(x_position, ratio) * x_dim)
-    w = int(ratio * x_dim)
-    h = int(ratio * y_dim)
-
+    bounding = get_bounding(y_position, x_position, y_dim, x_dim, ratio)
     
     labels = np.zeros(shape=(num_data))
-    samples = get_samples(shape, rng, num_data, (x, y, w, h))
+    samples = get_samples(shape, rng, num_data, bounding=bounding)
     return samples, labels
+   
 
 
-def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str) -> None:
+def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str, ratio: float, shape: str, y_position: str, x_position: str) -> None:
     x_dim, y_dim = list(map(int, size.split('x')))
+    colors = np.array_split(synthetic_samples, 2, axis=1)[1].flatten()
+    other_color_idx = np.where(colors != -1)[0]
+    blue_color_idx = np.array([idx for idx in range(synthetic_samples.shape[0]) if idx not in other_color_idx])
+    blue_samples = synthetic_samples[blue_color_idx]
+
+    (prv_x, prv_y, prv_w, prv_h) = get_bounding(y_position, x_position, y_dim, x_dim, ratio)
+    x_syn_in_prv = np.where((prv_x <= synthetic_samples[:, 0]) & (synthetic_samples[:, 0] <= prv_x + prv_w))[0]
+    y_syn_in_prv = np.where((prv_y <= synthetic_samples[:, 1]) & (synthetic_samples[:, 1] <= prv_y + prv_h))[0]
+    syn_in_prv = len(np.intersect1d(x_syn_in_prv, y_syn_in_prv))
+    
     fig = plt.figure()
     plt.scatter(private_samples[:, 0], private_samples[:, 1], color='red', label='Private')
-    plt.scatter(synthetic_samples[:, 0], synthetic_samples[:, 1], color='blue', label='Synthetic')
+    plt.scatter(blue_samples[:, 0], blue_samples[:, 1], color='blue', label='Synthetic')
+    for idx in other_color_idx:
+        plt.scatter(synthetic_samples[idx, 0], synthetic_samples[idx, 1], color=COLORS[synthetic_samples[idx, 2]], marker="*")
     plt.title(f"Private vs Synthetic at step {step}")
+    plt.suptitle(f"#Syn in Prv: {syn_in_prv}")
     # 범례 추가
     plt.legend()
 
@@ -74,5 +98,6 @@ def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: s
     plt.xlim(0, x_dim)
     plt.ylim(0, y_dim)
     plt.savefig(os.path.join(dir, f"{step}_plot.png"))
+    wandb.log({"syn_in_prv": syn_in_prv})
     wandb.log({'plot' : wandb.Image(fig), 't': step})
     
