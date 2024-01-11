@@ -8,7 +8,8 @@ from diffusers import StableDiffusionImg2ImgPipeline
 
 from .api import API
 from cubigate.dp.utils.pytorch_utils import dev
-
+import bentoml
+import diffusers
 
 def _round_to_uint8(image):
     return np.around(np.clip(image * 255, a_min=0, a_max=255)).astype(np.uint8)
@@ -29,8 +30,9 @@ class StableDiffusionAPI(API):
             inference_steps
         self._random_sampling_batch_size = API_batch_size
 
-        self._random_sampling_pipe = StableDiffusionPipeline.from_pretrained(
-            self._random_sampling_checkpoint, torch_dtype=torch.float16)
+        # self._random_sampling_pipe = StableDiffusionPipeline.from_pretrained(
+        #     self._random_sampling_checkpoint, torch_dtype=torch.float16)
+        self._random_sampling_pipe = bentoml.diffusers.load_model("runwayml-stable_defussion:v1.5", pipeline_class = diffusers.StableDiffusionPipeline, torch_dtype=torch.float16)
         self._random_sampling_pipe.safety_checker = None
         self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
 
@@ -39,10 +41,11 @@ class StableDiffusionAPI(API):
         self._variation_num_inference_steps = inference_steps
         self._variation_batch_size = API_batch_size
 
-        self._variation_pipe = \
-            StableDiffusionImg2ImgPipeline.from_pretrained(
-                self._variation_checkpoint,
-                torch_dtype=torch.float16)
+        # self._variation_pipe = \
+        #     StableDiffusionImg2ImgPipeline.from_pretrained(
+        #         self._variation_checkpoint,
+        #         torch_dtype=torch.float16)
+        self._variation_pipe = bentoml.diffusers.load_model("compvis-stable_defussion:v1.4", pipeline_class = diffusers.StableDiffusionImg2ImgPipeline, torch_dtype=torch.float16)
         self._variation_pipe.safety_checker = None
         self._variation_pipe = self._variation_pipe.to(dev())
         self.prompt = prompt
