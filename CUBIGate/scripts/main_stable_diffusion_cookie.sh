@@ -11,16 +11,12 @@ python main_for_bash.py \
 --num_org_data 10 \
 --prompt "A photo of ragdoll cat" \
 --result_folder result/cookie \
---tmp_folder /tmp/result/cookie \
+--tmp_folder /tmp/cookie \
 --api stable_diffusion \
---random_sampling_checkpoint 'runwayml/stable-diffusion-v1-5' \
---random_sampling_guidance_scale 7.5 \
---random_sampling_num_inference_steps 20 \
---random_sampling_batch_size 10 \
---variation_checkpoint 'CompVis/stable-diffusion-v1-4' \
---variation_guidance_scale 7.5 \
---variation_num_inference_steps 20 \
---variation_batch_size 10 \
+--API_checkpoint 'runwayml/stable-diffusion-v1-5' \
+--guidance_scale 7.5 \
+--inference_steps 20 \
+--API_batch_size 10 \
 --epsilon 1.0 \
 --num_samples_generate 2 \
 --variation_degree 0.5 \

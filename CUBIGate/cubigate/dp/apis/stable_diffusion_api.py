@@ -15,32 +15,29 @@ def _round_to_uint8(image):
 
 
 class StableDiffusionAPI(API):
-    def __init__(self, random_sampling_checkpoint,
-                 random_sampling_guidance_scale,
-                 random_sampling_num_inference_steps,
-                 random_sampling_batch_size,
-                 variation_checkpoint,
-                 variation_guidance_scale,
-                 variation_num_inference_steps,
-                 variation_batch_size,
+    def __init__(self,
+                 API_checkpoint,
+                 guidance_scale,
+                 inference_steps,
+                 API_batch_size,
                  prompt,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._random_sampling_checkpoint = random_sampling_checkpoint
-        self._random_sampling_guidance_scale = random_sampling_guidance_scale
+        self._random_sampling_checkpoint = API_checkpoint
+        self._random_sampling_guidance_scale = guidance_scale
         self._random_sampling_num_inference_steps = \
-            random_sampling_num_inference_steps
-        self._random_sampling_batch_size = random_sampling_batch_size
+            inference_steps
+        self._random_sampling_batch_size = API_batch_size
 
         self._random_sampling_pipe = StableDiffusionPipeline.from_pretrained(
             self._random_sampling_checkpoint, torch_dtype=torch.float16)
         self._random_sampling_pipe.safety_checker = None
         self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
 
-        self._variation_checkpoint = variation_checkpoint
-        self._variation_guidance_scale = variation_guidance_scale
-        self._variation_num_inference_steps = variation_num_inference_steps
-        self._variation_batch_size = variation_batch_size
+        self._variation_checkpoint = API_checkpoint
+        self._variation_guidance_scale = guidance_scale
+        self._variation_num_inference_steps = inference_steps
+        self._variation_batch_size = API_batch_size
 
         self._variation_pipe = \
             StableDiffusionImg2ImgPipeline.from_pretrained(
@@ -60,46 +57,26 @@ class StableDiffusionAPI(API):
             help="If the API accepts a prompt, the initial samples will be generated with the prompt"
         )
         parser.add_argument(
-            '--random_sampling_checkpoint',
+            '--API_checkpoint',
             type=str,
             required=True,
-            help='The path to the checkpoint for random sampling API')
+            help='The path to the checkpoint for API')
         parser.add_argument(
-            '--random_sampling_guidance_scale',
+            '--guidance_scale',
             type=float,
             default=7.5,
-            help='The guidance scale for random sampling API')
+            help='The guidance scale for API')
         parser.add_argument(
-            '--random_sampling_num_inference_steps',
+            '--inference_steps',
             type=int,
             default=50,
-            help='The number of diffusion steps for random sampling API')
+            help='The number of diffusion steps for API')
         parser.add_argument(
-            '--random_sampling_batch_size',
+            '--API_batch_size',
             type=int,
             default=10,
-            help='The batch size for random sampling API')
+            help='The batch size for API')
 
-        parser.add_argument(
-            '--variation_checkpoint',
-            type=str,
-            required=True,
-            help='The path to the checkpoint for variation API')
-        parser.add_argument(
-            '--variation_guidance_scale',
-            type=float,
-            default=7.5,
-            help='The guidance scale for variation API')
-        parser.add_argument(
-            '--variation_num_inference_steps',
-            type=int,
-            default=50,
-            help='The number of diffusion steps for variation API')
-        parser.add_argument(
-            '--variation_batch_size',
-            type=int,
-            default=10,
-            help='The batch size for variation API')
         return parser
 
     def random_sampling(self, num_samples, size):

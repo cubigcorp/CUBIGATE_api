@@ -254,6 +254,7 @@ class CubigDPGenerator():
         # Start learning
         for t in range(self.start_t, iteration):
             logging.info(f"t={t}")
+            self.folder = f'{self.result_folder}/{t}'
 
             # 2. Variate current samples to produce candidates
             packed_samples_path = self.variate(
@@ -280,10 +281,10 @@ class CubigDPGenerator():
 
             log_samples(
                 samples=self.samples,
-                folder=f'{self.result_folder}/{t}',
+                folder=self.folder,
                 plot_samples=plot_images)
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
-        return f'{self.result_folder}/{t}/_samples.npz'
+        return f'{self.folder}/_samples.npz'
 
 
     def generate(
@@ -396,10 +397,11 @@ class CubigDPGenerator():
             variation_degree=variation_degree)
         log_samples(
             samples=packed_samples,
-            folder=self.tmp_folder,
+            folder=self.folder,
             plot_samples=False,
+            save_npz=True,
             prefix='packed')
-        return f'{self.tmp_folder}/packed_samples.npz'
+        return f'{self.folder}/packed_samples.npz'
 
 
     def measure(
