@@ -320,14 +320,10 @@ class CubigDPGenerator():
         """
         if len(api_args) == 0:
             api_args=[
-                '--random_sampling_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                '--random_sampling_guidance_scale', '7.5',
-                '--random_sampling_num_inference_steps', '20',
-                '--random_sampling_batch_size', '10',
-                '--variation_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                '--variation_guidance_scale', '7.5',
-                '--variation_num_inference_steps', '20',
-                '--variation_batch_size', '10'
+                '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
+                '--guidance_scale', '7.5',
+                '--inference_steps', '20',
+                '--API_batch_size', '10',
                 ]
         api_args.extend(['--prompt', self.prompt])
 
