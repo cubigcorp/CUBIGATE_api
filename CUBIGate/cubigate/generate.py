@@ -373,7 +373,7 @@ class CubigDPGenerator():
         variation_degree: float
     ) -> str:
         """
-        Variate current samples
+        Variate current samples to produce candidates
 
         Parameters
         ----------
