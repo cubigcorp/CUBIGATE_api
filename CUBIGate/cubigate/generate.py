@@ -82,8 +82,6 @@ class CubigDPGenerator():
 
     def initialize(
         self,
-        iteration: int,
-        epsilon: float,
         api_args: List = [],
         data_folder: str = "./input_data/cookie",
         num_samples: int = 10,
@@ -176,10 +174,6 @@ class CubigDPGenerator():
                 logging.info('Ignoring data_checkpoint_step')
             self.start_t = 1
 
-        # 5. Calculate privacy parameters
-        total_epsilon = get_epsilon(epsilon, iteration)
-        logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
-        logging.info(f"Expected privacy cost per t: {epsilon:.2f}")
         return f'{self.folder}/_samples.npz'
 
 
@@ -326,14 +320,10 @@ class CubigDPGenerator():
         """
         if len(api_args) == 0:
             api_args=[
-                '--random_sampling_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                '--random_sampling_guidance_scale', '7.5',
-                '--random_sampling_num_inference_steps', '20',
-                '--random_sampling_batch_size', '10',
-                '--variation_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                '--variation_guidance_scale', '7.5',
-                '--variation_num_inference_steps', '20',
-                '--variation_batch_size', '10'
+                '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
+                '--guidance_scale', '7.5',
+                '--inference_steps', '20',
+                '--API_batch_size', '10',
                 ]
         api_args.extend(['--prompt', self.prompt])
 

@@ -29,8 +29,8 @@ def train_generate_dp_data(iterations=2, epsilon=1, delta=0):
 # Break down training into a series of detailed functions
 # Each uses the output of the previous one 
 # 1. Initialize -> variate
-def initialize_training(iteration: int = 2, epsilon: float = 1.0, delta: float = 0.0) -> str:
-    initial = generator.initialize(iteration=iteration, epsilon=epsilon, delta=delta)
+def initialize_training() -> str:
+    initial = generator.initialize()
     return initial
 
 # 2. Variate -> measure
