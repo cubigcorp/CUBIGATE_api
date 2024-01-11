@@ -82,8 +82,6 @@ class CubigDPGenerator():
 
     def initialize(
         self,
-        iteration: int,
-        epsilon: float,
         api_args: List = [],
         data_folder: str = "./input_data/cookie",
         num_samples: int = 10,
@@ -176,10 +174,6 @@ class CubigDPGenerator():
                 logging.info('Ignoring data_checkpoint_step')
             self.start_t = 1
 
-        # 5. Calculate privacy parameters
-        total_epsilon = get_epsilon(epsilon, iteration)
-        logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
-        logging.info(f"Expected privacy cost per t: {epsilon:.2f}")
         return f'{self.folder}/_samples.npz'
 
 
