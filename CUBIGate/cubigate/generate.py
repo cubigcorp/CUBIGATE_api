@@ -98,12 +98,6 @@ class CubigDPGenerator():
         ----------
         api_args:
             Arguments for API
-        iteration:
-            Number of learning iterations
-        epsilon:
-            Privacy parameter, for each iteration
-        delta:
-            Privacy parameter
         num_samples:
             Number of samples to generate
         img_size:
@@ -246,8 +240,6 @@ class CubigDPGenerator():
         # 1. Initialize
         samples_path = self.initialize(
             api_args=api_args,
-            iteration=iteration,
-            epsilon=epsilon,
             data_folder=data_folder,
             num_samples=num_samples,
             img_size=img_size,
