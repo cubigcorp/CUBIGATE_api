@@ -1,0 +1,14 @@
+version: '3.9'
+
+services:
+  dp-msv:
+    image: dp_msv:5ilsfovqj2uf2phm
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 2
+            capabilities: [gpu]
+    ports:
+      - "3000:3000"

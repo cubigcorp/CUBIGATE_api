@@ -19,7 +19,7 @@ class CubigDPGenerator():
         api: str = "stable_diffusion",
         feature_extractor: str = "clip_vit_b_32",
         result_folder: str = "result/cookie",
-        tmp_folder: str = "/tmp/cookie",
+        tmp_folder: str = "./tmp/cookie",
         data_loading_batch_size: int = 100,
         feature_extractor_batch_size: int = 500,
         prv_img_size: int = 1024,
