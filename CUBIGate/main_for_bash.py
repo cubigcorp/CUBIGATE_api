@@ -85,7 +85,7 @@ def argument():
         choices=['bert_base_nli_mean_tokens', 'inception_v3', 'clip_vit_b_32', 'original'], 
         help='Which image feature extractor to use')
     parser.add_argument(
-        '--nn_mode',
+        '--mode',
         type=str,
         default='L2',
         choices=['L2', 'IP'],
@@ -160,9 +160,9 @@ def main():
         tmp_folder=args.tmp_folder,
         data_loading_batch_size=args.data_loading_batch_size,
         feature_extractor_batch_size=args.feature_extractor_batch_size,
-        org_img_size=args.org_img_size,
+        prv_img_size=args.org_img_size,
         conditional=args.conditional,
-        num_org_data=args.num_org_data,
+        num_prv_data=args.num_org_data,
         prompt = args.prompt
     )
     if args.train:
@@ -179,7 +179,7 @@ def main():
             delta=args.delta,
             threshold=args.count_threshold,
             plot_images=args.plot_images,
-            nn_mode=args.nn_mode,
+            mode=args.mode,
             api_args=api_args
         )
     args.data_checkpoint_path = os.path.join(args.result_folder, str(len(args.variation_degree_schedule) - 1), '_samples.npz')

@@ -7,7 +7,7 @@ from cubigate.dp.data_loader import load_data, load_samples
 from cubigate.dp.extractors.feature_extractor import extract_features
 from cubigate.dp.dp_counter import dp_nn_histogram
 from cubigate.dp.apis import get_api_class_from_name
-from cubigate.dp.data_logger import log_samples, log_count, visualize
+from cubigate.dp.data_logger import log_samples
 from cubigate.dp.agm import get_epsilon
 from PIL import Image
 import shutil
@@ -22,9 +22,9 @@ class CubigDPGenerator():
         tmp_folder: str = "/tmp/cookie",
         data_loading_batch_size: int = 100,
         feature_extractor_batch_size: int = 500,
-        org_img_size: int = 1024,
+        prv_img_size: int = 1024,
         conditional: bool = False,
-        num_org_data: int = 10,
+        num_prv_data: int = 10,
         prompt: str = "A photo of ragdoll cat",
         seed: int = 2024
         ) -> None:
@@ -46,16 +46,18 @@ class CubigDPGenerator():
             Batch size for loading the original data
         feature_extractor_batch_size:
             Batch size for feature extractor
-        org_img_size:
+        prv_img_size:
             Size of original images
         conditional:
             Whether to generate class labels
-        num_org_img:
+        num_prv_img:
             Number of original data
         feature_extractor:
             Name of feature extractor to use
         prompt:
             Initial prompt for image generation
+        seed:
+            Random seed for reproducibility
         """
         
         # 0-a. Make result directory
@@ -69,9 +71,9 @@ class CubigDPGenerator():
         self.api_class = get_api_class_from_name(api)  # Name of the foundation model API
         self.result_folder = result_folder
         self.data_loading_batch_size = data_loading_batch_size
-        self.org_img_size = org_img_size
+        self.prv_img_size = prv_img_size
         self.conditional = conditional
-        self.num_org_data = num_org_data
+        self.num_prv_data = num_prv_data
         self.feature_extractor = feature_extractor
         self.feature_extractor_batch_size = feature_extractor_batch_size
         self.tmp_folder = tmp_folder
@@ -88,7 +90,33 @@ class CubigDPGenerator():
         img_size: str,
         plot_images: bool,
         checkpoint_path: str = '',
-        checkpoint_step: int = 0):
+        checkpoint_step: int = 0) -> None:
+        """
+        Prepare everything needed for learning such
+        as loading the private data, extracting 
+        private features, and generaing initial samples
+
+        Parameters
+        ----------
+        api_args:
+            Arguments for API
+        iteration:
+            Number of learning iterations
+        epsilon:
+            Privacy parameter, for each iteration
+        delta:
+            Privacy parameter
+        num_samples:
+            Number of samples to generate
+        img_size:
+            Target size of image to generate
+        plot_images:
+            Whether to save generated images in PNG files
+        checkpoint_path:
+            Path to the data checkpoint
+        checkpoint_step:
+            Iteration of the data checkpoint
+        """
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
         
@@ -97,9 +125,9 @@ class CubigDPGenerator():
         self.all_private_samples, self.all_private_labels = load_data(
             data_dir=data_folder,
             batch_size=self.data_loading_batch_size,
-            image_size=self.org_img_size,
+            image_size=self.prv_img_size,
             class_cond=self.conditional,
-            num_private_samples=self.num_org_data)
+            num_private_samples=self.num_prv_data)
 
         self.private_classes = list(sorted(set(list(self.all_private_labels))))
         self.private_num_classes = len(self.private_classes)
@@ -110,7 +138,7 @@ class CubigDPGenerator():
             data=self.all_private_samples,
             tmp_folder=self.tmp_folder,
             model_name=self.feature_extractor,
-            res=self.org_img_size,
+            res=self.prv_img_size,
             batch_size=self.feature_extractor_batch_size)
 
         # 4-a. Load data checkpoint if any
@@ -154,10 +182,47 @@ class CubigDPGenerator():
         threshold: float = 0.0,
         plot_images: bool = False,
         img_size: str = '512x512',
-        nn_mode: str = 'L2',
+        mode: str = 'L2',
         api_args: List = []
-        ):
+        ) -> str:
 
+        """
+        Learn the distribution
+
+        Parameters
+        ----------
+        api_args:
+            Arguments for API
+        data_folder:
+            Folder of the original data
+        checkpoint_path:
+            Path to the data checkpoint
+        checkpoint_step:
+            Iteration of the data checkpoint
+        num_samples:
+            Number of samples to generate at each iteration
+        variation_degree_schedule:
+            Variation degree at each iteration
+        num_candidate:
+            Number of candidates to be selected for each sample
+        img_size:
+            Target size of image to generate
+        epsilon:
+            Privacy parameter, for each iteration
+        delta:
+            Privacy parameter
+        threshold:
+            Threshold to estimate the distribution
+        plot_images:
+            Whether to save generated images in PNG files
+        mode:
+            Which distance metric to use in measure
+
+        Returns
+        ----------
+        str:
+            Path for the final checkpoint
+        """
         if len(variation_degree_schedule) == 0:
             variation_degree_schedule = [1.0-i*0.02 for i in range(iteration)]
         if len(api_args) == 0:
@@ -173,39 +238,6 @@ class CubigDPGenerator():
                         ]
         api_args.extend(['--prompt', self.prompt])
         
-        """
-        Learn the distribution
-
-        Parameters
-        ----------
-        api_args:
-            Arguments for API
-        data_folder:
-            Folder of the original data
-        data_checkpoint_path:
-            Path to the data checkpoint
-        data_checkpoint_step:
-            Iteration of the data checkpoint
-        num_samples_schedule:
-            Number of samples to generate at each iteration
-        variation_degree_schedule:
-            Variation degree at each iteration
-        lookahead_degree:
-            Lookahead degree for computing distances between private and generated images
-        img_size:
-            Target size of image to generate
-        epsilon:
-            Privacy parameter, for each step of variations
-        delta:
-            Privacy parameter
-        count_threshold:
-            Threshold for DP NN histogram
-        plot_images:
-            Whether to save generated images in PNG files
-        nn_mode:
-            Which distance metric to use in DP NN histogram
-            
-        """
         # 1. Initialize
         self.initialize(
             api_args=api_args,
@@ -223,28 +255,27 @@ class CubigDPGenerator():
         for t in range(self.start_t, iteration):
             logging.info(f"t={t}")
 
-            # 2. Variate
-            packed_samples = self.variate(
+            # 2. Variate current samples to produce candidates
+            packed_samples_path = self.variate(
                 num_packing=num_candidate,
                 img_size=img_size,
                 variation_degree=variation_degree_schedule[t]
             )
-            # 3. Measure
+            # 3. Measure how well the candidates of each sample fit in the distribution
             counts = self.measure(
-                samples=packed_samples,
+                samples_path=packed_samples_path,
                 epsilon=epsilon,
                 delta=delta,
                 num_candidate=num_candidate,
                 threshold=threshold,
-                nn_mode=nn_mode
+                mode=mode
             )
             
-            # 8. Select parents
-            self.samples = self.select(
+            # 4. Select the fittest candidate of each sample
+            self.select(
                 dist=counts,
-                packed_samples=packed_samples,
-                num_candidate=num_candidate,
-                num_classes=self.private_num_classes
+                samples_path=packed_samples_path,
+                num_candidate=num_candidate
             )
 
             log_samples(
@@ -263,7 +294,7 @@ class CubigDPGenerator():
         variation_degree: float = 0.5,
         plot_images: bool = False,
         api_args: List = []
-    ):
+    ) -> zipfile.ZipFile:
         """
         Generate images based on the distribution learned
 
@@ -279,6 +310,11 @@ class CubigDPGenerator():
             Variation degree
         plot_images:
             Whether to save generated images in PNG files
+
+        Returns
+        ----------
+        ZipFile:
+            Zip file of the generated images
         """
         if len(api_args) == 0:
             api_args=[
@@ -335,31 +371,77 @@ class CubigDPGenerator():
         num_packing: int,
         img_size: str,
         variation_degree: float
-    ):
+    ) -> str:
+        """
+        Variate current samples
+
+        Parameters
+        ----------
+        num_packing:
+            Number of variations for each sample
+        img_size:
+            Target size of image to generate
+        variation_degree:
+            Strength of variation
+
+        Returns:
+        ----------
+        str:
+            Path for the result samples
+        """
         packed_samples = self.api.variation(
             samples=self.samples,
             num_variations_per_sample=num_packing,
             size=img_size,
             variation_degree=variation_degree)
-        return packed_samples
+        log_samples(
+            samples=packed_samples,
+            folder=self.tmp_folder,
+            plot_samples=False,
+            prefix='packed')
+        return f'{self.tmp_folder}/packed_samples.npz'
 
 
     def measure(
         self,
-        samples: np.ndarray,
+        samples_path: str,
         epsilon: float,
         delta: float,
         num_candidate: int,
         threshold: float = 0.0,
-        nn_mode: str = 'L2',
-    ):
+        mode: str = 'L2',
+    ) -> np.ndarray:
+        """
+        Measure how well the candidates of each sample fit in the distribution
+
+        Parameters
+        ----------
+        samples_path:
+            Path for the candidates
+        epsilon:
+            Privacy parameter to securely estimate the distribution
+        delta:
+            Privacy parameter
+        num_candidate:
+            Number of candidate for each sample
+        threshold:
+            Threshold to estimate the distribution
+        mode:
+            Which distance metric to use
+
+        Returns
+        ----------
+        ndarray:
+            Estimated distribution
+        """
+        samples = load_samples(samples_path)
         packed_features = []
         for i in range(samples.shape[1]):
             sub_packed_features = extract_features(
                 data=samples[:, i],
                 tmp_folder=self.tmp_folder,
                 model_name=self.feature_extractor,
-                res=self.org_img_size,
+                res=self.prv_img_size,
                 batch_size=self.feature_extractor_batch_size)
             logging.info(
                 f'sub_packed_features.shape: {sub_packed_features.shape}')
@@ -380,7 +462,7 @@ class CubigDPGenerator():
                 epsilon=epsilon,
                 delta=delta,
                 rng=self.rng,
-                mode=nn_mode,
+                mode=mode,
                 threshold=threshold,
                 num_candidate=num_candidate)
             count.append(sub_count)
@@ -391,14 +473,26 @@ class CubigDPGenerator():
     def select(
         self,
         dist: np.ndarray,
-        packed_samples: np.ndarray,
-        num_candidate: int,
-        num_classes: int
-    ):
-        assert packed_samples.shape[0] % num_classes == 0
-        num_samples_per_class = packed_samples.shape[0] // num_classes
+        samples_path: str,
+        num_candidate: int
+    ) -> None:
+        """
+        Select the fittest candidate of each sample
+
+        Parameters
+        ----------
+        dist:
+            Estimated distribution
+        samples_path:
+            Path for the candidates
+        num_candidate:
+            Number of candidates for each sample
+        """
+        samples = load_samples(samples_path)
+        assert samples.shape[0] % self.private_num_classes == 0
+        num_samples_per_class = samples.shape[0] // self.private_num_classes
         selected = []
-        for class_i in range(num_classes):
+        for class_i in range(self.private_num_classes):
             sub_count = dist[
                 num_samples_per_class * class_i:
                 num_samples_per_class * (class_i + 1)]
@@ -410,5 +504,5 @@ class CubigDPGenerator():
                 )
                 selected.append(indices)
         selected = np.concatenate(selected)
-        selected_samples = packed_samples[np.arange(packed_samples.shape[0]), selected]
-        return selected_samples
+        self.samples = samples[np.arange(samples.shape[0]), selected]
+
