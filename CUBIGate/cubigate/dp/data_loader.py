@@ -56,3 +56,9 @@ def load_samples(path):
     data = np.load(path)
     samples = data['samples']
     return samples
+
+
+def load_count(path: str) -> np.ndarray:
+    npz = np.load(path)
+    count = npz['count']
+    return count

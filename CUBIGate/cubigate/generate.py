@@ -3,11 +3,11 @@ import os
 import numpy as np
 from typing import Optional, List
 from cubigate.dp.utils.logging import setup_logging
-from cubigate.dp.data_loader import load_data, load_samples
+from cubigate.dp.data_loader import load_data, load_samples, load_count
 from cubigate.dp.extractors.feature_extractor import extract_features
 from cubigate.dp.dp_counter import dp_nn_histogram
 from cubigate.dp.apis import get_api_class_from_name
-from cubigate.dp.data_logger import log_samples
+from cubigate.dp.data_logger import log_samples, log_count
 from cubigate.dp.agm import get_epsilon
 from PIL import Image
 import shutil
@@ -263,7 +263,7 @@ class CubigDPGenerator():
                 variation_degree=variation_degree_schedule[t]
             )
             # 3. Measure how well the candidates of each sample fit in the distribution
-            counts = self.measure(
+            count_path = self.measure(
                 samples_path=packed_samples_path,
                 epsilon=epsilon,
                 delta=delta,
@@ -274,7 +274,7 @@ class CubigDPGenerator():
             
             # 4. Select the fittest candidate of each sample
             self.select(
-                dist=counts,
+                dist_path=count_path,
                 samples_path=packed_samples_path,
                 num_candidate=num_candidate
             )
@@ -412,7 +412,7 @@ class CubigDPGenerator():
         num_candidate: int,
         threshold: float = 0.0,
         mode: str = 'L2',
-    ) -> np.ndarray:
+    ) -> str:
         """
         Measure how well the candidates of each sample fit in the distribution
 
@@ -434,7 +434,7 @@ class CubigDPGenerator():
         Returns
         ----------
         ndarray:
-            Estimated distribution
+            Path for the estimated distribution
         """
         samples = load_samples(samples_path)
         packed_features = []
@@ -469,12 +469,13 @@ class CubigDPGenerator():
                 num_candidate=num_candidate)
             count.append(sub_count)
         count = np.concatenate(count)
-        return count
+        log_count(count, f'{self.folder}/count.npz')
+        return f'{self.folder}/count.npz'
 
 
     def select(
         self,
-        dist: np.ndarray,
+        dist_path: str,
         samples_path: str,
         num_candidate: int
     ) -> None:
@@ -483,14 +484,15 @@ class CubigDPGenerator():
 
         Parameters
         ----------
-        dist:
-            Estimated distribution
+        dist_path:
+            Path for the estimated distribution
         samples_path:
             Path for the candidates
         num_candidate:
             Number of candidates for each sample
         """
         samples = load_samples(samples_path)
+        dist = load_count(dist_path)
         assert samples.shape[0] % self.private_num_classes == 0
         num_samples_per_class = samples.shape[0] // self.private_num_classes
         selected = []

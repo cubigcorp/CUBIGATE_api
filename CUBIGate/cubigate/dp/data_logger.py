@@ -17,11 +17,11 @@ def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, prefix:
             imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
 
 
-def log_count(count, clean_count, path):
+def log_count(count, path):
     dirname = os.path.dirname(path)
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    np.savez(path, count=count, clean_count=clean_count)
+    np.savez(path, count=count)
 
 def visualize(samples, packed_samples, count, folder, suffix=''):
     if not os.path.exists(folder):
