@@ -82,15 +82,15 @@ class CubigDPGenerator():
 
     def initialize(
         self,
-        api_args: List,
         iteration: int,
         epsilon: float,
-        data_folder: str,
-        num_samples: int,
-        img_size: str,
-        plot_images: bool,
-        checkpoint_path: str = '',
-        checkpoint_step: int = 0) -> None:
+        api_args: List = [],
+        data_folder: str = "./input_data/cookie",
+        num_samples: int = 10,
+        img_size: str = '512x512',
+        plot_images: bool = False,
+        checkpoint_path: str = "./result/cookie/1/_samples.npz",
+        checkpoint_step: int = 1) -> str:
         """
         Prepare everything needed for learning such
         as loading the private data, extracting 
@@ -116,10 +116,22 @@ class CubigDPGenerator():
             Path to the data checkpoint
         checkpoint_step:
             Iteration of the data checkpoint
+
+        Returns
+        ----------
+        str:
+            Path for the initial samples
         """
+        if len(api_args) == 0:
+            api_args = [
+                        '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
+                        '--guidance_scale', '7.5',
+                        '--inference_steps', '20',
+                        '--API_batch_size', '10',
+                        ]
+        api_args.extend(['--prompt', self.prompt])
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
-        
 
         # 2. Load private data
         self.all_private_samples, self.all_private_labels = load_data(
@@ -149,14 +161,16 @@ class CubigDPGenerator():
             if checkpoint_step < 0:
                 raise ValueError('data_checkpoint_step should be >= 0')
             self.start_t = checkpoint_step + 1
+            self.folder = f'{self.result_folder}/{self.start_t}'
         # 4-b. Generate initial population
         else:
-            self.samples = self.api.random_sampling(
+            samples = self.api.random_sampling(
                 num_samples=num_samples,
                 size=img_size)
+            self.folder = f'{self.result_folder}/{1}'
             log_samples(
-                samples=self.samples,
-                folder=f'{self.result_folder}/{0}',
+                samples=samples,
+                folder=self.folder,
                 plot_samples=plot_images)
             if checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step')
@@ -166,6 +180,7 @@ class CubigDPGenerator():
         total_epsilon = get_epsilon(epsilon, iteration)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
         logging.info(f"Expected privacy cost per t: {epsilon:.2f}")
+        return f'{self.folder}/_samples.npz'
 
 
     def train(
@@ -175,7 +190,7 @@ class CubigDPGenerator():
         delta: float,
         data_folder: str = "./input_data/cookie",
         checkpoint_path: str = "./result/cookie/1/_samples.npz",
-        checkpoint_step: int = 0,
+        checkpoint_step: int = 1,
         num_samples: int = 10,
         variation_degree_schedule: List[float] = [],
         num_candidate: int = 4,
@@ -227,19 +242,15 @@ class CubigDPGenerator():
             variation_degree_schedule = [1.0-i*0.02 for i in range(iteration)]
         if len(api_args) == 0:
             api_args = [
-                        '--random_sampling_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                        '--random_sampling_guidance_scale', '7.5',
-                        '--random_sampling_num_inference_steps', '20',
-                        '--random_sampling_batch_size', '10',
-                        '--variation_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                        '--variation_guidance_scale', '7.5',
-                        '--variation_num_inference_steps', '20',
-                        '--variation_batch_size', '10'
+                        '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
+                        '--guidance_scale', '7.5',
+                        '--inference_steps', '20',
+                        '--API_batch_size', '10',
                         ]
         api_args.extend(['--prompt', self.prompt])
         
         # 1. Initialize
-        self.initialize(
+        samples_path = self.initialize(
             api_args=api_args,
             iteration=iteration,
             epsilon=epsilon,
@@ -250,14 +261,15 @@ class CubigDPGenerator():
             checkpoint_path=checkpoint_path,
             checkpoint_step=checkpoint_step
         )
-
+        self.folder = f'{self.result_folder}/{self.start_t + 1}'
         # Start learning
         for t in range(self.start_t, iteration):
             logging.info(f"t={t}")
-            self.folder = f'{self.result_folder}/{t}'
+            
 
             # 2. Variate current samples to produce candidates
             packed_samples_path = self.variate(
+                samples_path=samples_path,
                 num_packing=num_candidate,
                 img_size=img_size,
                 variation_degree=variation_degree_schedule[t]
@@ -271,18 +283,13 @@ class CubigDPGenerator():
                 threshold=threshold,
                 mode=mode
             )
-            
+            self.folder = f'{self.result_folder}/{t + 1}'
             # 4. Select the fittest candidate of each sample
             self.select(
                 dist_path=count_path,
-                samples_path=packed_samples_path,
+                samples_path=samples_path,
                 num_candidate=num_candidate
             )
-
-            log_samples(
-                samples=self.samples,
-                folder=self.folder,
-                plot_samples=plot_images)
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
         return f'{self.folder}/_samples.npz'
 
@@ -369,9 +376,10 @@ class CubigDPGenerator():
 
     def variate(
         self,
-        num_packing: int,
-        img_size: str,
-        variation_degree: float
+        samples_path: str,
+        num_packing: int = 4,
+        img_size: str = '512x512',
+        variation_degree: float = 0.5
     ) -> str:
         """
         Variate current samples to produce candidates
@@ -390,8 +398,9 @@ class CubigDPGenerator():
         str:
             Path for the result samples
         """
+        samples = load_samples(samples_path)
         packed_samples = self.api.variation(
-            samples=self.samples,
+            samples=samples,
             num_variations_per_sample=num_packing,
             size=img_size,
             variation_degree=variation_degree)
@@ -409,8 +418,8 @@ class CubigDPGenerator():
         samples_path: str,
         epsilon: float,
         delta: float,
-        num_candidate: int,
-        threshold: float = 0.0,
+        num_candidate: int = 4,
+        threshold: float = 1.0,
         mode: str = 'L2',
     ) -> str:
         """
@@ -433,7 +442,7 @@ class CubigDPGenerator():
 
         Returns
         ----------
-        ndarray:
+        str:
             Path for the estimated distribution
         """
         samples = load_samples(samples_path)
@@ -452,7 +461,7 @@ class CubigDPGenerator():
 
 
         count = []
-        self.num_samples_per_class = self.samples.shape[0] // len(self.private_classes)
+        self.num_samples_per_class = samples.shape[0] // len(self.private_classes)
         num_samples_per_class_w_candidates = self.num_samples_per_class * num_candidate
         for class_i, class_ in enumerate(self.private_classes):
             sub_count, _, _ = dp_nn_histogram(
@@ -477,8 +486,8 @@ class CubigDPGenerator():
         self,
         dist_path: str,
         samples_path: str,
-        num_candidate: int
-    ) -> None:
+        num_candidate: int = 4
+    ) -> str:
         """
         Select the fittest candidate of each sample
 
@@ -487,9 +496,14 @@ class CubigDPGenerator():
         dist_path:
             Path for the estimated distribution
         samples_path:
-            Path for the candidates
+            Path for the samples
         num_candidate:
             Number of candidates for each sample
+
+        Returns
+        ----------
+        str:
+            Path for the selected samples
         """
         samples = load_samples(samples_path)
         dist = load_count(dist_path)
@@ -508,5 +522,10 @@ class CubigDPGenerator():
                 )
                 selected.append(indices)
         selected = np.concatenate(selected)
-        self.samples = samples[np.arange(samples.shape[0]), selected]
+        samples = samples[np.arange(samples.shape[0]), selected]
+        log_samples(
+            samples=samples,
+            folder=self.folder,
+            plot_samples=False,)
+        return f'{self.folder}/_samples.npz'
 

@@ -25,3 +25,26 @@ def train_generate_dp_data(iterations=2, epsilon=1, delta=0):
     new_data=generator.generate(data_checkpoint)
     print(type(new_data))
     return new_data
+
+# Break down training into a series of detailed functions
+# Each uses the output of the previous one 
+# 1. Initialize -> variate
+def initialize_training(iteration: int = 2, epsilon: float = 1.0, delta: float = 0.0) -> str:
+    initial = generator.initialize(iteration=iteration, epsilon=epsilon, delta=delta)
+    return initial
+
+# 2. Variate -> measure
+def variate_prev_data(previous: str) -> str:
+    variated = generator.variate(samples_path=previous)
+    return variated
+
+# 3. measure -> select
+def measure_variated(variated: str, epsilon: float, delta: float) -> str:
+    measured = generator.measure(samples_path=variated, epsilon=epsilon, delta=delta)
+    return measured
+
+
+# 4. select -> variate
+def select_measured(measured: str, variated: str) -> str:
+    selected = generator.select(dist_path=measured, samples_path=variated)
+    return selected
