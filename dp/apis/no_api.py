@@ -166,34 +166,62 @@ class NoAPI(API):
             target_samples = samples[start_idx:end_idx]
             target_demo = demo_samples[start_idx:end_idx].flatten() if num_demo > 0 else None
             target_degree = variation_degree[start_idx:end_idx] if isinstance(variation_degree, np.ndarray) else variation_degree
-
             if self._modality == 'time-series':
                 variation = []
                 skipped_samples = 0  # 걸러진 샘플들의 수를 추적하기 위한 변수
                 row,column = list(map(int, size.split('x')))
-                for sample in target_samples:
-                    try:
-                        sample_no_space = sample.replace(" ", "")  # 공백 제거
-                        # 문자열 데이터를 DataFrame으로 변환
-                        sample_df = pd.read_csv(io.StringIO(sample_no_space), header=None)
-                        
+                
+                if num_demo > 0:
+                    combined_variations = []
+                    for demo_sample, sample in zip(target_demo, target_samples):
+                        try:
+                            # 데모 샘플을 DataFrame으로 변환
+                            demo_sample_df = pd.read_csv(io.StringIO(demo_sample.replace(" ", "")), header=None)
 
-                        # DataFrame의 크기가 (8, 21)이 아닌 경우 건너뛰기
-                        if sample_df.shape != (row, column):
-                            skipped_samples += 1
+                            # 실제 샘플을 DataFrame으로 변환
+                            sample_df = pd.read_csv(io.StringIO(sample.replace(" ", "")), header=None)
+
+                            # (실제 샘플에서만) 각 데이터 포인트에 가우시안 노이즈 추가
+                            noisy_sample_df = sample_df.apply(lambda col: col + np.random.normal(0, target_degree, size=col.shape))
+
+                            # 가중치 적용
+                            weighted_noisy_sample = noisy_sample_df * sample_weight
+                            weighted_demo_sample = demo_sample_df * (1 - sample_weight)
+
+                            # 가중치가 적용된 두 DataFrame을 합산
+                            combined_df = weighted_noisy_sample + weighted_demo_sample
+
+                            # DataFrame을 다시 문자열로 변환하여 variation 리스트에 추가
+                            combined_sample = combined_df.to_csv(header=False, index=False).strip('\n')
+                            variation.append(combined_sample)
+
+                        except Exception as e:
+                            # 변환 과정에서 에러 발생 시 건너뛰기
                             continue
 
-                        # 각 데이터 포인트에 가우시안 노이즈 추가
-                        noisy_df = sample_df.apply(lambda col: col + np.random.normal(0, target_degree, size=col.shape))
-                        # DataFrame을 다시 문자열로 변환하여 variation 리스트에 추가
-                        noisy_sample = noisy_df.to_csv(header=False, index=False).strip('\n')
-                        variation.append(noisy_sample)
+                else:
+                    for sample in target_samples:
+                        try:
+                            sample_no_space = sample.replace(" ", "")  # 공백 제거
+                            # 문자열 데이터를 DataFrame으로 변환
+                            sample_df = pd.read_csv(io.StringIO(sample_no_space), header=None)
+                            
+                            # DataFrame의 크기가 기존 크기가 아닌 경우 건너뛰기
+                            if sample_df.shape != (row, column):
+                                skipped_samples += 1
+                                continue
 
-                    except Exception as e:
-                        # 변환 과정에서 에러 발생 시 건너뛰기
-                        skipped_samples += 1
-                        continue
+                            # 각 데이터 포인트에 가우시안 노이즈 추가
+                            noisy_df = sample_df.apply(lambda col: col + np.random.normal(0, target_degree, size=col.shape))
+                            # DataFrame을 다시 문자열로 변환하여 variation 리스트에 추가
+                            noisy_sample = noisy_df.to_csv(header=False, index=False).strip('\n')
+                            variation.append(noisy_sample)
 
+                        except Exception as e:
+                            # 변환 과정에서 에러 발생 시 건너뛰기
+                            skipped_samples += 1
+                            continue
+                    
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)
             if self._live == 0 and _save and candidate:
