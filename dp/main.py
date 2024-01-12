@@ -13,12 +13,13 @@ from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
-from dpsda.arg_utils import str2bool
+from dpsda.arg_utils import str2bool, split_args
 from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data, log_plot
+from dpsda.schedulers import get_scheduler
 
 
 
@@ -185,6 +186,16 @@ def parse_args():
         default='0,'*9 + '0',
         help='Variation degree at each iteration')
     parser.add_argument(
+        '--use_scheduler',
+        type=str2bool
+    )
+    parser.add_argument(
+        '--variation_degree_scheduler',
+        type=str,
+        default='linear',
+        choices=['step', 'exponential', 'linear'],
+        help='Variation degree scheduler')
+    parser.add_argument(
         '--adaptive_variation_degree',
         type=str2bool,
         default=False
@@ -325,7 +336,11 @@ def parse_args():
         type=str,
         default='1024x1024',
         help='Size of generated images in the format of HxW')
-    args, api_args = parser.parse_known_args()
+    args, other_args = parser.parse_known_args()
+    if args.use_scheduler:
+        api_args, scheduler_args = split_args(other_args)
+    else:
+        api_args = other_args
     live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
@@ -340,14 +355,15 @@ def parse_args():
     args.wandb_log_tags = args.wandb_log_tags.split(',') if args.wandb_log_tags != '' else None
     args.toy_data_type = args.toy_data_type.split('_')
 
-    if len(args.num_samples_schedule) != len(args.variation_degree_schedule):
+    if (not args.use_scheduler) and (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
         raise ValueError('The length of num_samples_schedule and '
                          'variation_degree_schedule should be the same')
     if args.sample_weight < 1:
         assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
-    return args, api
+    schduler = get_scheduler(args.variation_degree_scheduler, scheduler_args, len(args.num_samples_schedule)) if args.use_scheduler else None
+    return args, api, schduler
 
 
 def round_to_uint8(image):
@@ -412,7 +428,7 @@ def wandb_logging(private_labels: List, diversity: List, first_vote_only: List, 
 
 
 def main():
-    args, api = parse_args()
+    args, api, scheduler = parse_args()
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     log_file = os.path.join(args.result_folder, 'log.log')
@@ -429,6 +445,7 @@ def main():
         args.use_public_data = False
         args.modality = 'toy'
         args.feature_extractor = ''
+        args.initial_prompt = args.toy_data_type
         
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
@@ -550,11 +567,7 @@ def main():
                      synthetic_samples=samples, 
                      size=args.sample_size,
                      step=0,
-                     dir=args.result_folder,
-                     ratio=args.toy_private_bounding_ratio,
-                     shape=args.toy_data_type[0],
-                    y_position=args.toy_data_type[1],
-                    x_position=args.toy_data_type[2],)
+                     dir=args.result_folder,)
     
     
     if args.compute_fid:
@@ -591,13 +604,14 @@ def main():
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
+        variation_degree_t = scheduler.step() if args.use_scheduler else args.variation_degree_schedule[t]
         if args.num_candidate == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
             # adaptive variation degree - count 정보가 있을 때만 적용
             if (args.adaptive_variation_degree) and ('count' in vars()):
                 logging.info("Calculating adaptive variation degree")
-                logging.info(f"Maximum degree for t={t}: {args.variation_degree_schedule[t]:.2f}")
+                logging.info(f"Maximum degree for t={t}: {variation_degree_t:.2f}")
                 variation_degree = []
                 for class_i in private_classes:
                     # count: (Nsyn)
@@ -609,33 +623,33 @@ def main():
                         all_private_labels == class_].shape[0]
                     sub_ratio = np.divide(sub_count, sub_num_vote)
                     share = 1 - np.clip(sub_ratio, 0, 0.9)
-                    sub_degree = np.multiply(share, args.variation_degree_schedule[t])
+                    sub_degree = np.multiply(share, variation_degree_t)
                     variation_degree.append(sub_degree)
                 variation_degree = np.concatenate(variation_degree)
                 logging.info(f'Largest variation degrees: {np.flip(np.sort(variation_degree))[:50]}')
             else:
-                variation_degree = args.variation_degree_schedule[t]     
+                variation_degree = variation_degree_t
                     
             # demonstration
-            if args.sample_weight < 1:
+            if (args.sample_weight < 1) and ('count' in vars()):
                 demo_indices = []  # (Nsyn * demonstrations)
                 logging.info('Getting demonstrations')
                 for class_i in private_classes:
-                    if 'count' in vars():
+                    # if 'count' in vars():
                         # count 정보가 있는 경우 이를 활용
                         # (Nsyn)
-                        sub_count = count[
-                            num_samples_per_class * class_i:
-                            num_samples_per_class * (class_i + 1)]
-                        sub_losers = accum_loser[class_i, 
-                            num_samples_per_class * class_i:
-                            num_samples_per_class * (class_i + 1)]
-                        sub_count[sub_losers] = 0
+                    sub_count = count[
+                        num_samples_per_class * class_i:
+                        num_samples_per_class * (class_i + 1)]
+                    sub_losers = accum_loser[class_i, 
+                        num_samples_per_class * class_i:
+                        num_samples_per_class * (class_i + 1)]
+                    sub_count[sub_losers] = 0
                         
-                    else:
-                        # count 정보가 없는 경우 random으로 뽑기
-                        # (Nsyn)
-                        sub_count = np.ones(shape=(num_samples_per_class))
+                    # else:
+                    #     # count 정보가 없는 경우 random으로 뽑기
+                    #     # (Nsyn)
+                    #     sub_count = np.ones(shape=(num_samples_per_class))
 
                     # Nsyn >> demonstration
                     for _ in range(num_samples_per_class):
@@ -651,6 +665,10 @@ def main():
                 shape = samples.shape
                 demo_shape = (shape[0], args.demonstration) + shape[1:]
                 demo_samples = demo_samples.reshape(demo_shape)
+                # Sorting demo samples bssed on count
+                demo_counts = count[demo_indices].reshape((-1, args.demonstration))
+                demo_sorted_idx = np.flip(np.argsort(demo_counts, axis=1), axis=1)
+                demo_samples = demo_samples[np.arange(demo_samples.shape[0])[:, None], demo_sorted_idx]
                 logging.info(f'Demonstration samples shape: {demo_samples.shape}')
             else:
                 demo_samples = None
@@ -739,6 +757,8 @@ def main():
                     diversity[class_i] = updated_div
                     first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
                     wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], t, accum_loser.T.tolist())
+                if t < 8:
+                    first_vote_only[class_i] = True
             else:
                 sub_count, sub_losers = nn_histogram(
                     synthetic_features=packed_features[
@@ -867,12 +887,8 @@ def main():
             log_plot(private_samples=all_private_samples,
                      synthetic_samples=samples, 
                      size=args.sample_size,
-                     step=0,
-                     dir=args.result_folder,
-                     ratio=args.toy_private_bounding_ratio,
-                     shape=args.toy_data_type[0],
-                    y_position=args.toy_data_type[1],
-                    x_position=args.toy_data_type[2],)
+                     step=t,
+                     dir=args.result_folder)
     
         else:
             log_samples(

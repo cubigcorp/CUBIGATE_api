@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 import os
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple, Union
 import numpy as np
 import wandb
 
@@ -18,6 +18,15 @@ def get_xy(position: str, ratio: float) -> float:
     else:
         raise ValueError(f"Unknown position: {position}")
     return p
+
+
+def get_samples_out_bounding(shape: str, rng: np.random.Generator, num_data: int, bounding: Tuple, size: str, ratio: float, distinctive: int = 10) -> np.ndarray:
+    x_dim, y_dim = list(map(int, size.split('x')))
+    (x, y, w, h) = bounding
+    x =  x_dim * ratio if x == 0 else 0
+    y = y_dim * ratio if y == 0 else 0
+    samples = get_samples(shape, rng, num_data, distinctive, (x, y, w, h))
+    return samples
 
 
 def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive: int = 10, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
@@ -51,35 +60,40 @@ def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive
     return samples
 
 
-def get_bounding(y_position: str, x_position: str, y_dim: int, x_dim: int, ratio: float) -> Tuple:
+def get_bounding(y_position: str, x_position: str, size: str, ratio: float) -> Tuple:
+    x_dim, y_dim = list(map(int, size.split('x')))
     y = int(get_xy(y_position, ratio) * y_dim)
     x = int(get_xy(x_position, ratio) * x_dim)
     w = int(ratio * x_dim)
     h = int(ratio * y_dim)
     return (x, y, w, h)
+
+
+def normalize(samples: np.ndarray, size: str) -> np.ndarray:
+    x_dim, y_dim = list(map(int, size.split('x')))
+    samples[:,0] = samples[:, 0] / x_dim * 2 - 1
+    samples[:, 1] = samples[:, 1] / y_dim * 2 -1
+    return samples
         
 
 def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position: str, num_data: int, num_labels: int, ratio: float, rng: np.random.Generator, size: str) -> np.ndarray:
     assert 0 <= ratio <= 1
-    x_dim, y_dim = list(map(int, size.split('x')))
-    bounding = get_bounding(y_position, x_position, y_dim, x_dim, ratio)
-    
+    bounding = get_bounding(y_position, x_position, size, ratio)
     labels = np.zeros(shape=(num_data))
     samples = get_samples(shape, rng, num_data, bounding=bounding)
+    samples = normalize(samples, size)
     return samples, labels
    
 
 
-def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str, ratio: float, shape: str, y_position: str, x_position: str) -> None:
-    x_dim, y_dim = list(map(int, size.split('x')))
+def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str, margin: int = 0.05) -> None:
     colors = np.array_split(synthetic_samples, 2, axis=1)[1].flatten()
     other_color_idx = np.where(colors != -1)[0]
     blue_color_idx = np.array([idx for idx in range(synthetic_samples.shape[0]) if idx not in other_color_idx])
     blue_samples = synthetic_samples[blue_color_idx]
 
-    (prv_x, prv_y, prv_w, prv_h) = get_bounding(y_position, x_position, y_dim, x_dim, ratio)
-    x_syn_in_prv = np.where((prv_x <= synthetic_samples[:, 0]) & (synthetic_samples[:, 0] <= prv_x + prv_w))[0]
-    y_syn_in_prv = np.where((prv_y <= synthetic_samples[:, 1]) & (synthetic_samples[:, 1] <= prv_y + prv_h))[0]
+    x_syn_in_prv = np.where((private_samples[:, 0].min() - margin <= synthetic_samples[:, 0]) & (synthetic_samples[:, 0] <= private_samples[:, 0].max() + margin))[0]
+    y_syn_in_prv = np.where((private_samples[:, 1].min() - margin <= synthetic_samples[:, 1]) & (synthetic_samples[:, 1] <= private_samples[:, 1].max() + margin))[0]
     syn_in_prv = len(np.intersect1d(x_syn_in_prv, y_syn_in_prv))
     
     fig = plt.figure()
@@ -95,9 +109,9 @@ def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: s
     # x축과 y축에 실선 추가
     plt.axhline(y=0, color='black', linewidth=1)
     plt.axvline(x=0, color='black', linewidth=1)
-    plt.xlim(0, x_dim)
-    plt.ylim(0, y_dim)
+    plt.xlim(-1, 1)
+    plt.ylim(-1, 1)
     plt.savefig(os.path.join(dir, f"{step}_plot.png"))
-    wandb.log({"syn_in_prv": syn_in_prv})
+    wandb.log({"syn_in_prv": syn_in_prv, 't': step})
     wandb.log({'plot' : wandb.Image(fig), 't': step})
     
