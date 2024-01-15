@@ -18,7 +18,7 @@ spec:
           medium: Memory
       containers:
         - name: dp-msv-ai
-          image: curebigdata/dp_msv:v1.1
+          image: curebigdata/dp_msv:v1.3
           volumeMounts:
           - mountPath: /dev/shm
             name: dshm

@@ -10,17 +10,17 @@ from pydantic import BaseModel
 svc = bentoml.Service("dp_msv", runners=[])
 
 class generate_input(BaseModel):
-    data_checkpoint_path: str
+    checkpoint_path: str
     
 class train_input(BaseModel):
     iterations: int = 2
-    epsilon: int = 1
-    delta: int = 0
+    epsilon: float = 1.1
+    delta: float = 0.1
 
 @svc.api(input=JSON(pydantic_model=generate_input), output=File())
 def generate(input_data: generate_input):
-    data_checkpoint_path = input_data.data_checkpoint_path
-    output_file_path = generate_dp_data(data_checkpoint_path).filename
+    checkpoint_path = input_data.checkpoint_path
+    output_file_path = generate_dp_data(checkpoint_path).filename
     file_content = None
     with io.open(output_file_path, 'rb') as file:
         file_content = file.read()
@@ -37,9 +37,9 @@ def train(input_data: train_input):
     epsilon = input_data.epsilon
     delta = input_data.delta
     
-    data_checkpoint_path = train_data_generation_model(iterations, epsilon, delta)
+    checkpoint_path = train_data_generation_model(iterations, epsilon, delta)
     res = {
-        "data_checkpoint_path": data_checkpoint_path
+        "checkpoint_path": checkpoint_path
     }
     
     return res

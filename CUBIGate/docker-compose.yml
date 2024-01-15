@@ -2,7 +2,7 @@ version: '3.5'
 
 services:
   dp-msv:
-    image: dp_msv:hmrxhovql6s4iphm
+    image: dp_msv:lnb7c3vtnsexophm
     deploy:
       resources:
         reservations:
