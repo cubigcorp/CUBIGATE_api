@@ -15,7 +15,7 @@ def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, sa
         for i in range(samples.shape[0]):
             if modality == 'image':
                 imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
-            elif modality == 'text':
+            elif modality == 'text' or modality == 'time-series' or modality=="tabular":
                 with open(os.path.join(folder, f"{prefix}_{i}.txt"), 'w', encoding='utf-8') as f:
                     f.write(samples[i])
             else:

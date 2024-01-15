@@ -16,6 +16,10 @@ from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
+from sklearn.preprocessing import OneHotEncoder
+import warnings
+import pandas as pd
+warnings.filterwarnings('ignore')
 
 
 
@@ -100,13 +104,13 @@ def parse_args():
     parser.add_argument(
         '--modality',
         type=str,
-        choices=['image', 'text', 'time-series'], #Tabular: text
+        choices=['image', 'text', 'time-series', "tabular"], #Tabular: text
         required=True)
     parser.add_argument(
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2'], #Tabular_1:Chatgpt
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'noapi'], #Tabular_1:Chatgpt
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',
@@ -279,6 +283,26 @@ def parse_args():
         type=str,
         default='1024x1024',
         help='Size of generated images in the format of HxW')
+    parser.add_argument(
+        '--seed_population',
+        type=str,
+        default='GM',)
+    parser.add_argument(
+        '--attrPrompt',
+        type=str,
+        default='True',)
+    parser.add_argument(
+        '--categorical_variation_degree',
+        type=float,
+        default=0.1,)
+    parser.add_argument(
+        '--data_path',
+        type=str,
+        default="/home/yerinyoon/Cubigate_ai_engine/dp/data/private_less_preprocessed_adult.csv" )
+    parser.add_argument(
+        '--public_dir',
+        type=str,
+        default="/home/yerinyoon/1226/Cubigate_ai_engine/dp/data/init_random_adult_less/public" )
     args, api_args = parser.parse_known_args()
     live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
@@ -286,7 +310,7 @@ def parse_args():
     if args.direct_variate:
         assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
     if args.loser_lower_bound == 0:
-        args.loser_lower_bound = args.num_samples_schedule[0] / args.num_candidate
+        args.loser_lower_bound = 1 / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
@@ -348,6 +372,64 @@ def log_fid(folder, fid, t):
         f.write(f'{t} {fid}\n')
 
 
+def attrPrompt(args, attrPrompt=True):
+    onehotencoder=OneHotEncoder()
+    origin=pd.read_csv(args.data_path)
+    column=origin.columns
+    categorical=origin.dtypes.index[origin.dtypes.values==object]
+    df=origin
+    cat_num={}
+    for i in categorical:
+        X=onehotencoder.fit_transform(origin[i].values.reshape(-1, 1)).toarray()
+        cat_num[i]=X.shape[1]
+        X.shape[1]
+        dfOneHot=pd.DataFrame(X, columns=[i+str(int(j)) for j in range(X.shape[1])])
+        df=pd.concat([df, dfOneHot], axis=1)
+        df=df.drop(i, axis=1)
+        
+    origin_init=origin
+    num_origin=origin_init.drop(categorical, axis=1)
+    cat_origin=origin_init[categorical]
+    columns=""
+    
+    for i in origin_init.columns:
+        columns+=str(i)
+        columns+=", "
+       
+
+    num_origin_info=num_origin.describe()
+    metric=["mean", "std", "min", "max" ]
+    public_metric=["min", "max"]
+    
+    num_info=""
+    num_public_info=dict.fromkeys(num_origin_info.columns)
+
+    for i in num_origin_info.columns:
+        num_public_info[i]=[]
+        num_info+=f"{i} column information:["
+        for j in metric:
+            num_info+=f"{j}:{num_origin_info.loc[j][i]}, "
+        for j in public_metric:
+            num_public_info[i].append(num_origin_info.loc[j][i])
+        num_info+="],"
+        
+    cat_info=""
+    cat_public_info=dict.fromkeys(cat_origin.columns)
+    for i in categorical:
+        cat_info+=f"{i} is in  {str(cat_origin[i].unique())}, "
+        cat_public_info[i]=list(cat_origin[i].unique())
+    string=f"Generate 1 row which has {columns} for columns sequentially and numerical columns \
+            need to generate with below constraint: \
+            {num_info} and categorical value have to get value fall into \
+                below constraint:\
+                {cat_info}.\
+                    Table format is same with \"58 Private 259532 Some-college 10 Married-civ-spouse Transport-moving Husband White Male 0 0 70 United-States less\"\
+                        Don't indicate columns. And don't say anything but rows."
+                  
+    string=string.replace("\n", "")
+    
+    public_info=[num_public_info, cat_public_info]
+    return [string], public_info, column
 def main():
     args, api = parse_args()
     if not os.path.exists(args.result_folder):
@@ -432,11 +514,15 @@ def main():
                 prompt=args.initial_prompt)
             start_t = 1
         else:
+            if args.modality=="tabular":
+                args.initial_prompt, public_info, columns=attrPrompt(args)
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
                 num_samples=args.num_samples_schedule[0],
-                size=args.image_size)
+                size=args.image_size, modality=args.modality, public_dir=args.public_data_folder,
+                seed_population=args.seed_population, 
+                public_info=public_info, columns=columns)
             logging.info(f"Generated initial samples: {len(samples)}")
             log_samples(
                 samples=samples,
@@ -449,7 +535,7 @@ def main():
             start_t = 1
     if args.compute_fid:
         logging.info(f'Computing {metric}')
-        if args.modality == 'text' or args.modality == 'time-series':
+        if args.modality == 'text' or args.modality == 'time-series' or args.modality=="tabular":
                 tokens = [tokenize(args.fid_model_name, sample) for sample in samples]
                 tokens = np.array(tokens)
         else:
@@ -525,14 +611,20 @@ def main():
                         # count 정보가 없는 경우 random으로 뽑기
                         # (Nsyn)
                         sub_count = np.ones(shape=(num_samples_per_class))
-
+                    print(num_samples_per_class)
+                    print(sub_count)
+                    if np.sum(sub_count)==0:
+                        total_sub_count=1
+                    else:
+                        total_sub_count=np.sum(sub_count)
+                                            
                     # Nsyn >> demonstration
                     for _ in range(num_samples_per_class):
                         sub_indices = rng.choice(
                             np.arange(num_samples_per_class * class_i,
                                     num_samples_per_class * (class_i + 1)),
                             size=args.demonstration,
-                            p=sub_count / np.sum(sub_count),
+                            p=sub_count / total_sub_count,
                             replace=False)
                         demo_indices.append(sub_indices)
                 demo_indices = np.concatenate(demo_indices)
@@ -544,7 +636,7 @@ def main():
             else:
                 demo_samples = None
             logging.info('Running sample variation')
-            packed_samples = api.variation(
+            packed_samples =api.variation(
                 samples=samples,
                 additional_info=additional_info,
                 num_variations_per_sample=args.num_candidate,
@@ -553,9 +645,11 @@ def main():
                 t=t,
                 candidate=True,
                 demo_samples=demo_samples,
-                sample_weight=args.sample_weight)
-            
-        if args.modality == 'text' or args.modality == 'time-series':
+                sample_weight=args.sample_weight,
+                modality=args.modality, columns=columns, 
+                cat_var=args.categorical_variation_degree, public_info=public_info
+                )
+        if args.modality == 'text' or args.modality == 'time-series' or args.modality=="tabular":
             packed_tokens = []
             for packed_sample in packed_samples:
                 tokens = [tokenize(args.feature_extractor, t) for t in packed_sample]
@@ -722,13 +816,15 @@ def main():
                 size=args.image_size,
                 variation_degree=variation_degree,
                 t=t,
-                candidate=False)
+                candidate=False, modality=args.modality,
+                columns=columns,  cat_var=args.categorical_variation_degree,
+                public_info=public_info)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')
-            if args.modality == 'text' or args.modality == 'time-series':
+            if args.modality == 'text' or args.modality == 'time-series' or args.modality=="tabular":
                 new_new_tokens = [tokenize(args.fid_model_name, sample) for sample in new_new_samples]
                 new_new_tokens = np.array(new_new_tokens)
             else:

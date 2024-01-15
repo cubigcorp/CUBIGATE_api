@@ -10,6 +10,8 @@ EXTENSIONS={
     'image':
         ['jpg', 'jpeg', 'png', 'gif'],
     'text':
+        ['txt'],
+    'time-series':
         ['txt']
 }
 
