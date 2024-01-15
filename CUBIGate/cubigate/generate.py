@@ -17,7 +17,7 @@ class CubigDPGenerator():
     def __init__(
         self, 
         api: str = "stable_diffusion",
-        feature_extractor: str = "clip_vit_b_32",
+        feature_extractor: str = "inception_v3",
         result_folder: str = "result/cookie",
         tmp_folder: str = "./tmp/cookie",
         data_loading_batch_size: int = 100,
@@ -25,7 +25,10 @@ class CubigDPGenerator():
         prv_img_size: int = 1024,
         conditional: bool = False,
         num_prv_data: int = 10,
-        prompt: str = "A photo of ragdoll cat",
+        prompt: str = """white or gray ragdoll cat, intricate, 
+                        high detail, dramatic, extremely realistic eyes, 
+                        extremely realistic hair, 
+                        hair color can be white,gray,black or other else""",
         seed: int = 2024
         ) -> None:
         
@@ -116,9 +119,9 @@ class CubigDPGenerator():
         """
         if len(api_args) == 0:
             api_args = [
-                        '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                        '--guidance_scale', '7.5',
-                        '--inference_steps', '20',
+                        '--API_checkpoint', 'stabilityai/sdxl-turbo',
+                        '--guidance_scale', '0',
+                        '--inference_steps', '2',
                         '--API_batch_size', '10',
                         ]
         api_args.extend(['--prompt', self.prompt])
@@ -230,9 +233,9 @@ class CubigDPGenerator():
             variation_degree_schedule = [1.0-i*0.02 for i in range(iteration)]
         if len(api_args) == 0:
             api_args = [
-                        '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                        '--guidance_scale', '7.5',
-                        '--inference_steps', '20',
+                        '--API_checkpoint', 'stabilityai/sdxl-turbo',
+                        '--guidance_scale', '0',
+                        '--inference_steps', '2',
                         '--API_batch_size', '10',
                         ]
         api_args.extend(['--prompt', self.prompt])
@@ -312,9 +315,9 @@ class CubigDPGenerator():
         """
         if len(api_args) == 0:
             api_args=[
-                '--API_checkpoint', 'runwayml/stable-diffusion-v1-5',
-                '--guidance_scale', '7.5',
-                '--inference_steps', '20',
+                '--API_checkpoint', 'stabilityai/sdxl-turbo',
+                '--guidance_scale', '0',
+                '--inference_steps', '2',
                 '--API_batch_size', '10',
                 ]
         api_args.extend(['--prompt', self.prompt])
