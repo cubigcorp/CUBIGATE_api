@@ -204,6 +204,8 @@ def nn_histogram(synthetic_features, private_features, num_candidate: int, num_p
     logging.info("Counting votes from private samples")
 
     counts = get_count_stack(private_features=private_features, synthetic_features=synthetic_features, num_candidate=num_candidate, index=index, k=num_nearest_neighbor)
+    counts_1st_idx = np.flip(np.argsort(counts, axis=1), axis=1)[:, 0]
+    counts = counts[np.arange(counts.shape[0]), counts_1st_idx].reshape((-1, 1))  # (Nsyn, 1)
     losers = np.full(counts.shape, False)
 
-    return counts, losers
+    return counts.flatten(), losers, counts_1st_idx
