@@ -138,6 +138,27 @@ class LinearDeg(DegreeScheduler):
 
 
 
+class ConstantDeg(DegreeScheduler):
+    def __init__(self,
+                 T: int,
+                 scheduler_base_deg: float,
+                 verbose: bool = True):
+        super().__init__(T, scheduler_base_deg, verbose)
+    
+
+    @staticmethod
+    def command_line_parser():
+        parser = super(
+            ExponentialDeg, ExponentialDeg).command_line_parser()
+        parser.add_argument(
+            '--scheduler_base_deg',
+            type=float
+        )
+        return parser
+
+    def _get_next_deg(self) -> float:
+        return self._last_deg
+
 
 def get_scheduler_class_from_name(name: str):
     if name == 'step':
@@ -146,6 +167,8 @@ def get_scheduler_class_from_name(name: str):
         return ExponentialDeg
     elif name == 'linear':
         return LinearDeg
+    elif name == 'constant':
+        return ConstantDeg
     else:
         raise ValueError(f'Unknown scheduler name {name}')
 

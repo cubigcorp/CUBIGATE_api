@@ -193,7 +193,7 @@ def parse_args():
         '--variation_degree_scheduler',
         type=str,
         default='linear',
-        choices=['step', 'exponential', 'linear'],
+        choices=['step', 'exponential', 'linear', 'constant'],
         help='Variation degree scheduler')
     parser.add_argument(
         '--adaptive_variation_degree',
