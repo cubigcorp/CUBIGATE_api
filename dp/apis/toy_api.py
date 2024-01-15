@@ -20,7 +20,8 @@ class ToyAPI(API):
             ToyAPI, ToyAPI).command_line_parser()
         parser.add_argument(
             '--private_ratio',
-            type=float
+            type=float,
+            default=0.4
         )
         return parser
 
