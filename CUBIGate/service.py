@@ -10,7 +10,7 @@ from pydantic import BaseModel
 svc = bentoml.Service("dp_msv", runners=[])
 
 class generate_input(BaseModel):
-    base_data: str
+    data_checkpoint_path: str
     
 class train_input(BaseModel):
     iterations: int = 2
@@ -19,8 +19,8 @@ class train_input(BaseModel):
 
 @svc.api(input=JSON(pydantic_model=generate_input), output=File())
 def generate(input_data: generate_input):
-    base_data = input_data.base_data
-    output_file_path = generate_dp_data(base_data).filename
+    data_checkpoint_path = input_data.data_checkpoint_path
+    output_file_path = generate_dp_data(data_checkpoint_path).filename
     file_content = None
     with io.open(output_file_path, 'rb') as file:
         file_content = file.read()
@@ -37,56 +37,51 @@ def train(input_data: train_input):
     epsilon = input_data.epsilon
     delta = input_data.delta
     
-    base_data = train_data_generation_model(iterations, epsilon, delta)
+    data_checkpoint_path = train_data_generation_model(iterations, epsilon, delta)
     res = {
-        "base_data": base_data
+        "data_checkpoint_path": data_checkpoint_path
     }
     
     return res
 ################################################################################################
 
 @svc.api(input=JSON(), output=JSON())
-def init_train(input_data: train_input):
-    iterations = input_data.iterations
-    epsilon = input_data.epsilon
-    delta = input_data.delta
-    
-    output_file_path = initialize_training(iterations, epsilon, delta)
+def init_train(input_data):   
+    output_file_path = initialize_training()
     res = {
-        "initial": output_file_path
+        "initial_sample_path": output_file_path
     }
     return res
 
 
 @svc.api(input=JSON(), output=JSON())
 def variate(input_data):
-    previous = input_data.get("previous", "")
-    
-    packed_samples = variate_prev_data(previous)
+    initial_sample_path = input_data.get("initial_sample_path", "")
+    result_sample_path = variate_prev_data(initial_sample_path)
     res = {
-        "packed_samples": packed_samples
+        "result_sample_path": result_sample_path
     }
     return res
 
 
 @svc.api(input=JSON(), output=JSON())
 def measure(input_data):
-    variated = input_data.get("variated", "")
+    result_sample_path = input_data.get("result_sample_path", "")
     epsilon = input_data.get("epsilon", 1)
     delta = input_data.get("delta", 0)
     
-    output_file_path = measure_variated(variated, epsilon, delta)
+    output_file_path = measure_variated(result_sample_path, epsilon, delta)
     
-    res = {"estimated_distribution": output_file_path}
+    res = {"estimated_distribution_path": output_file_path}
     return res
 
 
 @svc.api(input=JSON(), output=JSON())
 def select(input_data):
-    measured = input_data.get("measured", "")
-    variated = input_data.get("variated", "")
+    estimated_distribution_path = input_data.get("estimated_distribution_path", "")
+    result_sample_path = input_data.get("result_sample_path", "")
 
-    output_file_path = select_measured(measured, variated)
-    res = {"selected_samples": output_file_path}
+    output_file_path = select_measured(estimated_distribution_path, result_sample_path)
+    res = {"data_checkpoint_path": output_file_path}
     
     return res

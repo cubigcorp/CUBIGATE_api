@@ -12,9 +12,16 @@ spec:
       labels:
         app: dp-msv
     spec:
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
       containers:
         - name: dp-msv-ai
-          image: curebigdata/dp_msv:v1.0
+          image: curebigdata/dp_msv:v1.1
+          volumeMounts:
+          - mountPath: /dev/shm
+            name: dshm
           ports:
             - containerPort: 3000
           resources:

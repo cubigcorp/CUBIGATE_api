@@ -15,7 +15,7 @@ def train_data_generation_model(iterations=2, epsilon=1, delta=0):
 #Just generate data with your data checkpoint (data checkpoint means model chekcpoint in Cubigate)
 #Output: zip file of new data.
 def generate_dp_data(base_data="./result/cookie/1/_samples.npz"):
-    new_data=generator.generate( base_data)
+    new_data=generator.generate(base_data)
     print(type(new_data))
     return new_data
     
@@ -35,11 +35,13 @@ def initialize_training() -> str:
 
 # 2. Variate -> measure
 def variate_prev_data(previous: str) -> str:
+    generator.initialize()  
     variated = generator.variate(samples_path=previous)
     return variated
 
 # 3. measure -> select
 def measure_variated(variated: str, epsilon: float, delta: float) -> str:
+    generator.initialize()  
     measured = generator.measure(samples_path=variated, epsilon=epsilon, delta=delta)
     return measured
 
@@ -48,3 +50,9 @@ def measure_variated(variated: str, epsilon: float, delta: float) -> str:
 def select_measured(measured: str, variated: str) -> str:
     selected = generator.select(dist_path=measured, samples_path=variated)
     return selected
+
+
+
+# init_path = "result/cookie/2/_samples.npz"
+# second_out = variate_prev_data(init_path)
+# print(second_out)

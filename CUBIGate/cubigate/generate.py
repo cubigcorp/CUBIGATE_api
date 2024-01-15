@@ -247,7 +247,7 @@ class CubigDPGenerator():
             checkpoint_path=checkpoint_path,
             checkpoint_step=checkpoint_step
         )
-        self.folder = f'{self.result_folder}/{self.start_t + 1}'
+        self.folder = f'{self.result_folder}/{self.start_t + 1}' if self.start_t == 1 else f'{self.result_folder}/{self.start_t}'
         # Start learning
         for t in range(self.start_t, iteration):
             logging.info(f"t={t}")
@@ -508,6 +508,7 @@ class CubigDPGenerator():
         log_samples(
             samples=samples,
             folder=self.folder,
-            plot_samples=False,)
+            plot_samples=False,
+            save_npz=True,)
         return f'{self.folder}/_samples.npz'
 

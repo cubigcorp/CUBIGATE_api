@@ -1,14 +1,20 @@
-version: '3.9'
+version: '3.5'
 
 services:
   dp-msv:
-    image: dp_msv:5ilsfovqj2uf2phm
+    image: dp_msv:hmrxhovql6s4iphm
     deploy:
       resources:
         reservations:
           devices:
           - driver: nvidia
-            count: 2
+            count: 1
             capabilities: [gpu]
     ports:
       - "3000:3000"
+    volumes:
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+           size: 10000000000 # (this means 10GB)
+
