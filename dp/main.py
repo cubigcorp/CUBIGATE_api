@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument(
         '--toy_private_bounding_ratio',
         type=float,
-        default=0.4
+        default=0.0
     )
     parser.add_argument(
         '--wandb_log_notes',
@@ -114,7 +114,7 @@ def parse_args():
     parser.add_argument(
         '--epsilon',
         type=float,
-        default=2.0,
+        default=0.0,
         required=False)
     parser.add_argument(
         '--delta',
@@ -193,7 +193,7 @@ def parse_args():
         '--variation_degree_scheduler',
         type=str,
         default='linear',
-        choices=['step', 'exponential', 'linear', 'constant'],
+        choices=['step', 'exponential', 'linear'],
         help='Variation degree scheduler')
     parser.add_argument(
         '--adaptive_variation_degree',
@@ -208,7 +208,7 @@ def parse_args():
     parser.add_argument(
         '--num_private_samples',
         type=int,
-        default=100,
+        default=50000,
         help='Number of private samples to load')
     parser.add_argument(
         '--noise_multiplier',
@@ -665,9 +665,6 @@ def main():
                 shape = samples.shape
                 demo_shape = (shape[0], args.demonstration) + shape[1:]
                 demo_samples = demo_samples.reshape(demo_shape)
-                # Deleting demo samples for the fittest
-                no_demo_indices = np.argwhere(count / count.max() > 0.8)
-                demo_samples[no_demo_indices] = np.zeros((1, args.demonstration))
                 # Sorting demo samples bssed on count
                 demo_counts = count[demo_indices].reshape((-1, args.demonstration))
                 demo_sorted_idx = np.flip(np.argsort(demo_counts, axis=1), axis=1)
@@ -763,7 +760,7 @@ def main():
                 if t < 8:
                     first_vote_only[class_i] = True
             else:
-                sub_count, sub_losers = nn_histogram(
+                sub_count, sub_losers, sub_1st_idx = nn_histogram(
                     synthetic_features=packed_features[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
