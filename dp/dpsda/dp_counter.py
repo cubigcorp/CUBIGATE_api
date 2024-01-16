@@ -113,7 +113,7 @@ def diversity_check(losers: np.ndarray, diversity: float, num_samples: int, dive
 def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray, epsilon: float, delta: float,
                     noise_multiplier: float, rng: np.random.Generator, num_nearest_neighbor: int, mode: str,
                     threshold: float, num_candidate: int, diversity: float, diversity_lower_bound: float = 0.0,
-                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1):
+                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1, device: int = 0):
     # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
@@ -131,7 +131,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     else:
         raise Exception(f'Unknown mode {mode}')
     if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, 0, index)
+        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")
@@ -180,7 +180,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     return counts.flatten(), clean_count, losers, counts_1st_idx
 
 
-def nn_histogram(synthetic_features, private_features, num_candidate: int, num_packing=1, num_nearest_neighbor=1, mode='L2'):
+def nn_histogram(synthetic_features, private_features, num_candidate: int, num_packing=1, num_nearest_neighbor=1, mode='L2', device: int = 0):
     # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
@@ -198,7 +198,7 @@ def nn_histogram(synthetic_features, private_features, num_candidate: int, num_p
     else:
         raise Exception(f'Unknown mode {mode}')
     if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, 0, index)
+        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")

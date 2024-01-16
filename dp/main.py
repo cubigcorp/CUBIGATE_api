@@ -193,7 +193,7 @@ def parse_args():
         '--variation_degree_scheduler',
         type=str,
         default='linear',
-        choices=['step', 'exponential', 'linear'],
+        choices=['step', 'exponential', 'linear', 'constant'],
         help='Variation degree scheduler')
     parser.add_argument(
         '--adaptive_variation_degree',
@@ -683,6 +683,8 @@ def main():
                 candidate=True,
                 demo_samples=demo_samples,
                 sample_weight=args.sample_weight)
+            # 현재 샘플도 후보로 넣음
+            packed_samples = np.concatenate((np.expand_dims(samples, axis=1), packed_samples), axis=1)
             
         if args.modality == 'text' or args.modality == 'time-series':
             packed_tokens = []
@@ -749,7 +751,8 @@ def main():
                     diversity=diversity[class_i],
                     diversity_lower_bound=args.diversity_lower_bound,
                     loser_lower_bound=args.loser_lower_bound,
-                    first_vote_only=first_vote_only[class_i])
+                    first_vote_only=first_vote_only[class_i],
+                    device=args.device)
                 if first_vote_only[class_i]:
                     accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
                     updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
@@ -767,7 +770,8 @@ def main():
                     private_features=all_private_features[
                         all_private_labels == class_],
                     mode=args.nn_mode,
-                    num_candidate=num_candidate
+                    num_candidate=num_candidate,
+                    device=args.device
                 )
                 sub_clean_count = sub_count.copy()
             log_count(
