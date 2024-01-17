@@ -613,7 +613,7 @@ def main():
         log_fid(args.result_folder, fid, 0)
         wandb.log({f'{metric}': fid})
 
-    T = len(args.num_samples_schedule) if args.T == 0 else args.T
+    T = len(args.num_samples_schedule) if args.T == 0 else args.T + 1
     if args.epsilon > 0 and args.dp:
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
