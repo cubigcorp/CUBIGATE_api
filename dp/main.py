@@ -561,6 +561,7 @@ def main():
                 prompt=args.initial_prompt)
             start_t = 1
         else:
+            
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
@@ -704,8 +705,8 @@ def main():
             if args.direct_variate:
                 # 현재 샘플도 후보로 넣음
                 packed_samples = np.concatenate((np.expand_dims(samples, axis=1), packed_samples), axis=1)
-            
-        if args.modality == 'text' or args.modality == 'time-series':
+
+        if args.modality == 'text' or args.modality == 'time-series' or args.modality=="tabular":
             packed_tokens = []
             for packed_sample in packed_samples:
                 tokens = [tokenize(args.feature_extractor, t) for t in packed_sample]
@@ -880,9 +881,7 @@ def main():
                 size=args.sample_size,
                 variation_degree=variation_degree,
                 t=t,
-                candidate=False, modality=args.modality,
-                columns=columns,  cat_var=args.categorical_variation_degree,
-                public_info=public_info)
+                candidate=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 
