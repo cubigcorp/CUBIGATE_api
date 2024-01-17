@@ -136,6 +136,7 @@ class LinearDeg(DegreeScheduler):
                  scheduler_min_deg: float,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._last_deg = scheduler_base_deg
         self._step_size = (scheduler_base_deg - scheduler_min_deg) / self._T
 
     def _get_next_deg(self) -> float:
