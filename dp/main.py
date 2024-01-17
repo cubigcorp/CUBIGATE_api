@@ -283,27 +283,12 @@ def parse_args():
         type=str,
         default='1024x1024',
         help='Size of generated images in the format of HxW')
-    parser.add_argument(
-        '--seed_population',
-        type=str,
-        default='GM',)
-    parser.add_argument(
-        '--attrPrompt',
-        type=str,
-        default='True',)
-    parser.add_argument(
-        '--categorical_variation_degree',
-        type=float,
-        default=0.1,)
-    parser.add_argument(
-        '--data_path',
-        type=str,
-        default="/home/yerinyoon/Cubigate_ai_engine/dp/data/private_less_preprocessed_adult.csv" )
-    parser.add_argument(
-        '--public_dir',
-        type=str,
-        default="/home/yerinyoon/1226/Cubigate_ai_engine/dp/data/init_random_adult_less/public" )
+    
+
+    
+
     args, api_args = parser.parse_known_args()
+    print(f"api_args:{api_args}")
     live_save_folder = args.result_folder if args.save_samples_live else None
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
@@ -372,64 +357,7 @@ def log_fid(folder, fid, t):
         f.write(f'{t} {fid}\n')
 
 
-def attrPrompt(args, attrPrompt=True):
-    onehotencoder=OneHotEncoder()
-    origin=pd.read_csv(args.data_path)
-    column=origin.columns
-    categorical=origin.dtypes.index[origin.dtypes.values==object]
-    df=origin
-    cat_num={}
-    for i in categorical:
-        X=onehotencoder.fit_transform(origin[i].values.reshape(-1, 1)).toarray()
-        cat_num[i]=X.shape[1]
-        X.shape[1]
-        dfOneHot=pd.DataFrame(X, columns=[i+str(int(j)) for j in range(X.shape[1])])
-        df=pd.concat([df, dfOneHot], axis=1)
-        df=df.drop(i, axis=1)
-        
-    origin_init=origin
-    num_origin=origin_init.drop(categorical, axis=1)
-    cat_origin=origin_init[categorical]
-    columns=""
-    
-    for i in origin_init.columns:
-        columns+=str(i)
-        columns+=", "
-       
 
-    num_origin_info=num_origin.describe()
-    metric=["mean", "std", "min", "max" ]
-    public_metric=["min", "max"]
-    
-    num_info=""
-    num_public_info=dict.fromkeys(num_origin_info.columns)
-
-    for i in num_origin_info.columns:
-        num_public_info[i]=[]
-        num_info+=f"{i} column information:["
-        for j in metric:
-            num_info+=f"{j}:{num_origin_info.loc[j][i]}, "
-        for j in public_metric:
-            num_public_info[i].append(num_origin_info.loc[j][i])
-        num_info+="],"
-        
-    cat_info=""
-    cat_public_info=dict.fromkeys(cat_origin.columns)
-    for i in categorical:
-        cat_info+=f"{i} is in  {str(cat_origin[i].unique())}, "
-        cat_public_info[i]=list(cat_origin[i].unique())
-    string=f"Generate 1 row which has {columns} for columns sequentially and numerical columns \
-            need to generate with below constraint: \
-            {num_info} and categorical value have to get value fall into \
-                below constraint:\
-                {cat_info}.\
-                    Table format is same with \"58 Private 259532 Some-college 10 Married-civ-spouse Transport-moving Husband White Male 0 0 70 United-States less\"\
-                        Don't indicate columns. And don't say anything but rows."
-                  
-    string=string.replace("\n", "")
-    
-    public_info=[num_public_info, cat_public_info]
-    return [string], public_info, column
 def main():
     args, api = parse_args()
     if not os.path.exists(args.result_folder):
@@ -514,15 +442,12 @@ def main():
                 prompt=args.initial_prompt)
             start_t = 1
         else:
-            if args.modality=="tabular":
-                args.initial_prompt, public_info, columns=attrPrompt(args)
+            
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
                 num_samples=args.num_samples_schedule[0],
-                size=args.image_size, modality=args.modality, public_dir=args.public_data_folder,
-                seed_population=args.seed_population, 
-                public_info=public_info, columns=columns)
+                size=args.image_size)
             logging.info(f"Generated initial samples: {len(samples)}")
             log_samples(
                 samples=samples,
@@ -646,8 +571,6 @@ def main():
                 candidate=True,
                 demo_samples=demo_samples,
                 sample_weight=args.sample_weight,
-                modality=args.modality, columns=columns, 
-                cat_var=args.categorical_variation_degree, public_info=public_info
                 )
         if args.modality == 'text' or args.modality == 'time-series' or args.modality=="tabular":
             packed_tokens = []
@@ -816,9 +739,7 @@ def main():
                 size=args.image_size,
                 variation_degree=variation_degree,
                 t=t,
-                candidate=False, modality=args.modality,
-                columns=columns,  cat_var=args.categorical_variation_degree,
-                public_info=public_info)
+                candidate=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
 

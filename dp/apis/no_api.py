@@ -13,15 +13,24 @@ import logging
 import time
 import random
 # from dpsda.pytorch_utils import dev
+from sklearn.preprocessing import OneHotEncoder
 
 
 class NoAPI(API):
     def __init__(self, random_sampling_batch_size,
-                 variation_batch_size,
+                 variation_batch_size, categorical_variation_degree, data_path, seed_population, public_dir,modality,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_batch_size = random_sampling_batch_size
         self._variation_batch_size = variation_batch_size
+        self.categorical_variation_degree=categorical_variation_degree
+        self.data_path=data_path
+        self.seed_population=seed_population
+        self.public_dir=public_dir
+        self.modality=modality
+
+        
+    
 
 
     @staticmethod
@@ -38,12 +47,95 @@ class NoAPI(API):
             type=int,
             default=10,
             help='The batch size for variation API')
+        parser.add_argument(
+        '--categorical_variation_degree',
+        type=float,
+        default=0.1,)
+        parser.add_argument(
+            '--data_path',
+            type=str,
+            default="/home/yerinyoon/Cubigate_ai_engine/dp/data/private_less_preprocessed_adult.csv" )
+        parser.add_argument(
+        '--seed_population',
+        type=str,
+        default='GM',)
+        parser.add_argument(
+        '--modality',
+        type=str,
+        default='tabular',)
+        parser.add_argument(
+        '--public_dir',
+        type=str,
+        required=False)
+
         return parser
+
+
+    def attrPrompt(self):
+        onehotencoder=OneHotEncoder()
+        origin=pd.read_csv(self.data_path)
+        column=origin.columns
+        categorical=origin.dtypes.index[origin.dtypes.values==object]
+        df=origin
+        cat_num={}
+        for i in categorical:
+            X=onehotencoder.fit_transform(origin[i].values.reshape(-1, 1)).toarray()
+            cat_num[i]=X.shape[1]
+            X.shape[1]
+            dfOneHot=pd.DataFrame(X, columns=[i+str(int(j)) for j in range(X.shape[1])])
+            df=pd.concat([df, dfOneHot], axis=1)
+            df=df.drop(i, axis=1)
+            
+        origin_init=origin
+        num_origin=origin_init.drop(categorical, axis=1)
+        cat_origin=origin_init[categorical]
+        columns=""
+        
+        for i in origin_init.columns:
+            columns+=str(i)
+            columns+=", "
+        
+
+        num_origin_info=num_origin.describe()
+        metric=["mean", "std", "min", "max" ]
+        public_metric=["min", "max"]
+        
+        num_info=""
+        num_public_info=dict.fromkeys(num_origin_info.columns)
+
+        for i in num_origin_info.columns:
+            num_public_info[i]=[]
+            num_info+=f"{i} column information:["
+            for j in metric:
+                num_info+=f"{j}:{num_origin_info.loc[j][i]}, "
+            for j in public_metric:
+                num_public_info[i].append(num_origin_info.loc[j][i])
+            num_info+="],"
+            
+        cat_info=""
+        cat_public_info=dict.fromkeys(cat_origin.columns)
+        for i in categorical:
+            cat_info+=f"{i} is in  {str(cat_origin[i].unique())}, "
+            cat_public_info[i]=list(cat_origin[i].unique())
+        string=f"Generate 1 row which has {columns} for columns sequentially and numerical columns \
+                need to generate with below constraint: \
+                {num_info} and categorical value have to get value fall into \
+                    below constraint:\
+                    {cat_info}.\
+                        Table format is same with \"58 Private 259532 Some-college 10 Married-civ-spouse Transport-moving Husband White Male 0 0 70 United-States less\"\
+                            Don't indicate columns. And don't say anything but rows."
+                    
+        string=string.replace("\n", "")
+        
+        public_info=[num_public_info, cat_public_info]
+        return public_info, column
     
-    def GM_initial_sampling(self, num_samples,  public_dir):
-        data_list=os.listdir(public_dir)
+    
+    def GM_initial_sampling(self, num_samples):
+        
+        data_list=os.listdir(self.public_dir)
         random.shuffle(data_list)
-        data_path=[os.path.join(public_dir, data) for data in data_list]
+        data_path=[os.path.join(self.public_dir, data) for data in data_list]
         max_batch_size = self._random_sampling_batch_size
         
         samples=[]
@@ -75,7 +167,7 @@ class NoAPI(API):
     def text_to_tabular(self, target_sample, column):
         #print(target_sample)
         # print(type(target_sample[0]))
-        
+        print(column)
         for i in range(len(target_sample)):
             if type(target_sample[0])==np.ndarray:
                 target=target_sample[i][0]
@@ -93,8 +185,10 @@ class NoAPI(API):
         
             df=[]
             for j in df_list:
+         
             
                 rows=j.split(",")
+
 
                 if "" in rows:
                     rows=rows.remove("")
@@ -122,6 +216,7 @@ class NoAPI(API):
                 total_df=pd.DataFrame(df, columns=column)
 
             else:
+            
                 df=pd.DataFrame(df, columns=column)
                 total_df=pd.concat([total_df,df])
         
@@ -150,12 +245,13 @@ class NoAPI(API):
             count+=1
         return text
     
-    def _tabular_variation(self, target_sample, column, variation_degree=0.001, cat_var=0.1, public_info={}):
+    def _tabular_variation(self,target_sample, variation_degree, cat_var):
 
     
         #if t==1:
+        public_info, column=self.attrPrompt()
         tabular=self.text_to_tabular(target_sample, column)
-
+    
         #TODO: 최빈값으로 바꾸기
         
         categorical_col=public_info[1].keys()
@@ -172,12 +268,13 @@ class NoAPI(API):
             tabular[col]=tabular[col].astype(float)
         
         for i, col in enumerate(num_col):
-            print(variation_degree)
+
             try:
                 gaussian_noise_col = np.random.normal(0, float(variation_degree), tabular.shape[0])
             except:
                 print(len(variation_degree))
                 gaussian_noise_col=np.array(variation_degree)
+  
             # print(f"guassain: {gaussian_noise_col}")
             tabular[col]+=gaussian_noise_col
             # print(tabular[col])
@@ -190,7 +287,10 @@ class NoAPI(API):
         
         for j in categorical_col:
             print(cat_var)
-            num=int(len(tabular[j])*cat_var)
+            try:
+                num=int(len(tabular[j])*cat_var)
+            except:
+                num=cat_var
             # print(list(range(0, len(tabular[j]))))
             # print(num)
             num_list=[random.choice(list(range(0, len(tabular[j])))) for i in range(num)]
@@ -262,14 +362,17 @@ class NoAPI(API):
        # print(return_prompts)
        # print(samples)
         return np.array(samples), np.array(return_prompts)    
-    def random_sampling(self, public_dir, num_samples, prompts, size=None, modality="tabular", seed_population="GM", public_info={}, columns=[]):
+    def random_sampling(self, prompts,num_samples,  size=None):
+        
         max_batch_size = self._random_sampling_batch_size
         texts = []
         return_prompts = []
-        if modality=="tabular" and seed_population=="GM":
-            samples, return_prompt=self.GM_initial_sampling(num_samples, public_dir)
-        elif modality=="tabular" and seed_population=="random":
-            samples, return_prompt=self.random_initial_sampling(num_samples, public_info, columns)
+ 
+        if self.modality=="tabular" and self.seed_population=="GM":
+            samples, return_prompt=self.GM_initial_sampling(num_samples)
+        elif self.modality=="tabular" and self.seed_population=="random":
+            public_info, column=self.attrPrompt()
+            samples, return_prompt=self.random_initial_sampling(num_samples, public_info, column)
             #random_initial_sampling(self, num_samples,  public_info, columns
         else:
             for prompt_i, prompt in enumerate(prompts):
@@ -322,9 +425,7 @@ class NoAPI(API):
         return samples, return_prompt
 
     def variation(self, samples: np.ndarray, additional_info: np.ndarray,
-                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0,
-                        modality="tabular", columns=[], 
-                        cat_var=0.1, public_info={}):
+                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         if isinstance(variation_degree, np.ndarray):
             if np.any(0 > variation_degree) or np.any(variation_degree > 1):
                 raise ValueError('variation_degree should be between 0 and 1')
@@ -352,8 +453,7 @@ class NoAPI(API):
                 l=idx,
                 candidate=candidate,
                 demo_samples=demo_samples,
-                sample_weight=sample_weight, column=columns, categorical_variation=cat_var, public_info=public_info)
-
+                sample_weight=sample_weight)
             variations.append(sub_variations)
 
             if self._live == 0 and candidate:
@@ -366,7 +466,7 @@ class NoAPI(API):
         return np.stack(variations, axis=1)
 
     def _variation(self, samples: np.ndarray, additional_info: np.ndarray, size, variation_degree: Union[float, np.ndarray], t: int, l: int, candidate: bool, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0,
-                   column=[], categorical_variation=0.01, public_info={}):
+                ):
         """
         samples : (Nsyn, ~) 변형해야 할 실제 샘플
         additional_info: (Nsyn,) 초기 샘플을 생성할 때 사용한 프롬프트
@@ -375,7 +475,9 @@ class NoAPI(API):
         candidate: candidate으로 만들어지는 샘플들만 저장하기 위해서 필요한 변수. 중요x
         demo_samples: (Nsyn, num_demo, ~) 데모로 사용할 샘플
         sample_weight: w
+    
         """
+
         print(f"1:{variation_degree}")
         num_demo = demo_samples.shape[1] if demo_samples is not None else 0
         max_batch_size = self._variation_batch_size
@@ -400,6 +502,7 @@ class NoAPI(API):
             target_samples = samples[start_idx:end_idx]
             target_demo = demo_samples[start_idx:end_idx].flatten() if num_demo > 0 else None
             target_degree = variation_degree[start_idx:end_idx] if isinstance(variation_degree, np.ndarray) else variation_degree
+            cat_degree=self.categorical_variation_degree[start_idx:end_idx] if isinstance(self.categorical_variation_degree ,np.ndarray) else self.categorical_variation_degree
             
             if self._modality == 'time-series':
                 variation = []
@@ -457,9 +560,10 @@ class NoAPI(API):
                             skipped_samples += 1
                             continue
             elif self._modality == 'tabular':
+
           
-                print(public_info)
-                variation=self._tabular_variation(target_samples, column, target_degree , categorical_variation, public_info)
+                # (self,target_sample, variation_degree, cat_var):
+                variation=self._tabular_variation(target_samples, target_degree ,  cat_degree)
                     
             variations.append(variation)
             _save = (self._save_freq < np.inf) and (idx % self._save_freq == 0)

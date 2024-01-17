@@ -32,7 +32,7 @@ class ChatGPTAPI(API):
         with open(api_key, 'r') as f:
             openai.api_key = f.read()
 
-        self._variation_checkpoint = variation_checkpoint
+        self._variaxftion_checkpoint = variation_checkpoint
         self._variation_batch_size = variation_batch_size
 
         self._variation_api = variation_checkpoint
