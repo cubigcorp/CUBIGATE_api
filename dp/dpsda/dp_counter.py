@@ -99,7 +99,7 @@ def sanity_check(counts: np.ndarray) -> bool:
 
 def get_losers(counts: np.ndarray, loser_lower_bound: float, max_vote: int) -> np.ndarray:
     logging.info("Counting losers")
-    losers = counts < loser_lower_bound * max_vote
+    losers = counts <= loser_lower_bound * max_vote
     logging.info(f"Total losers: {losers.sum()}")
     return losers
 
@@ -161,9 +161,9 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         if losers.sum() == 0:
             return counts.flatten(), clean_count, losers, counts_1st_idx
         counts[losers] = 0
-        first_vote_only = diversity_check(losers, diversity, counts.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
-        if first_vote_only:
-            return counts.flatten(), clean_count, losers, counts_1st_idx
+        # first_vote_only = diversity_check(losers, diversity, counts.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
+        # if first_vote_only:
+        #     return counts.flatten(), clean_count, losers, counts_1st_idx
         synthetic_features = synthetic_features.reshape((counts.shape[0], num_candidate) + synthetic_features.shape[1:])  # (Nsyn, num_candidate, ~)
         counts, counts_1st_idx = revival(
             counts=counts,
