@@ -181,6 +181,16 @@ def parse_args():
         default='50000,'*9 + '50000',
         help='Number of samples to generate at each iteration')
     parser.add_argument(
+        '--num_samples',
+        type=int,
+        default=0
+    )
+    parser.add_argument(
+        '--T',
+        type=int,
+        default=0
+    )
+    parser.add_argument(
         '--variation_degree_schedule',
         type=str,
         default='0,'*9 + '0',
@@ -355,15 +365,20 @@ def parse_args():
     args.wandb_log_tags = args.wandb_log_tags.split(',') if args.wandb_log_tags != '' else None
     args.toy_data_type = args.toy_data_type.split('_')
 
-    if (not args.use_scheduler) and (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
-        raise ValueError('The length of num_samples_schedule and '
-                         'variation_degree_schedule should be the same')
+    if args.num_samples > 0:
+        assert args.T > 0, "Specify how many variations to run."
+
+    if ((not args.use_scheduler) and args.T == 0 ):
+        if (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
+            raise ValueError('The length of num_samples_schedule and '
+                            'variation_degree_schedule should be the same')
+    T = args.num_samples if args.num_samples > 0 else len(args.num_samples_schedule)
     if args.sample_weight < 1:
         assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
     scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler)
-    scheduler = scheduler_class.from_command_line_args(scheduler_args, len(args.num_samples_schedule)) if args.use_scheduler else None
+    scheduler = scheduler_class.from_command_line_args(scheduler_args, T) if args.use_scheduler else None
     return args, api, scheduler
 
 
@@ -437,7 +452,6 @@ def main():
     if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
         logging.info("You set it non-dp. Privacy parameters are ignored.")
         args.direct_variate = True
-        args.adaptive_variation_degree = True
 
     if args.experimental:
         logging.info("This is an experimental run. All the unnecessary parameters are ignored.")
@@ -517,7 +531,7 @@ def main():
             device=f'cuda:{args.device}',
             metric=metric)
 
-    num_samples = args.num_samples_schedule[0]
+    num_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
     num_samples_per_class = num_samples // private_num_classes
 
     # Generating initial samples.
@@ -543,14 +557,14 @@ def main():
             samples, additional_info = load_public_data(
                 data_folder=args.public_data_folder,
                 modality=args.modality,
-                num_public_samples=args.num_samples_schedule[0],
+                num_public_samples=num_samples,
                 prompt=args.initial_prompt)
             start_t = 1
         else:
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
-                num_samples=args.num_samples_schedule[0],
+                num_samples=num_samples,
                 size=args.sample_size)
             logging.info(f"Generated initial samples: {len(samples)}")
             if not args.experimental:
@@ -598,7 +612,7 @@ def main():
         log_fid(args.result_folder, fid, 0)
         wandb.log({f'{metric}': fid})
 
-    T = len(args.num_samples_schedule)
+    T = len(args.num_samples_schedule) if args.T == 0 else args.T
     if args.epsilon > 0 and args.dp:
         total_epsilon = get_epsilon(args.epsilon, T)
         logging.info(f"Expected total epsilon: {total_epsilon:.2f}")
@@ -803,9 +817,12 @@ def main():
                     folder=f'{args.result_folder}/{t}',
                     suffix=f'class{class_}')
         logging.info('Generating new indices')
-        assert args.num_samples_schedule[t] % private_num_classes == 0
-        new_num_samples_per_class = (
-            args.num_samples_schedule[t] // private_num_classes)
+        if args.num_samples == 0:
+            assert args.num_samples_schedule[t] % private_num_classes == 0
+            new_num_samples_per_class = (
+                args.num_samples_schedule[t] // private_num_classes)
+        else:
+            new_num_samples_per_class = num_samples_per_class
 
         if args.direct_variate:
             selected = []
