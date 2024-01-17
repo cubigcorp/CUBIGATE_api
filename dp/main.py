@@ -378,7 +378,7 @@ def parse_args():
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
     scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler)
-    scheduler = scheduler_class.from_command_line_args(scheduler_args, T) if args.use_scheduler else None
+    scheduler = scheduler_class.from_command_line_args(args=scheduler_args, T=T) if args.use_scheduler else None
     return args, api, scheduler
 
 

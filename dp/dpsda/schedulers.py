@@ -40,8 +40,12 @@ class DegreeScheduler(ABC):
         scheduler = cls(**vars(args), args=args)
         scheduler._T = T
         scheduler._verbose = verbose
+        scheduler.setting()
         return scheduler
 
+    @abstractclassmethod
+    def setting(self):
+        pass
 
     def get_last_deg(self) -> float:
         return self._last_deg
@@ -137,10 +141,17 @@ class LinearDeg(DegreeScheduler):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_deg = scheduler_base_deg
-        self._step_size = (scheduler_base_deg - scheduler_min_deg) / self._T
+        self._base_deg = scheduler_base_deg
+        self._min_deg = scheduler_min_deg
 
     def _get_next_deg(self) -> float:
-        return self._last_deg  - self._step_size
+        test = self._last_deg  - self._step_size
+        return test if test >= 0 else 0
+
+
+    def setting(self):
+        self._step_size = (self._base_deg - self._min_deg) / self._T
+
 
     @staticmethod
     def command_line_parser():
