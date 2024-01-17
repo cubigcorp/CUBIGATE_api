@@ -19,7 +19,7 @@ from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data, log_plot
-from dpsda.schedulers import get_scheduler
+from dpsda.schedulers import get_scheduler_class_from_name
 
 
 
@@ -346,8 +346,8 @@ def parse_args():
         int, args.num_samples_schedule.split(',')))
     if args.direct_variate:
         assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
-    if args.loser_lower_bound == 0:
-        args.loser_lower_bound = 1 / args.num_candidate
+    # if args.loser_lower_bound == 0:
+    #     args.loser_lower_bound = 1 / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
@@ -362,8 +362,9 @@ def parse_args():
         assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
-    schduler = get_scheduler(args.variation_degree_scheduler, scheduler_args, len(args.num_samples_schedule)) if args.use_scheduler else None
-    return args, api, schduler
+    scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler)
+    scheduler = scheduler_class.from_command_line_args(scheduler_args, len(args.num_samples_schedule)) if args.use_scheduler else None
+    return args, api, scheduler
 
 
 def round_to_uint8(image):
@@ -449,10 +450,13 @@ def main():
         
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
+    config = dict(vars(args), **vars(api.args))
+    if args.use_scheduler:
+        config.update(**vars(scheduler.args))
     wandb.init(
         entity='cubig_ai',
         project="AZOO",
-        config=dict(vars(args), **vars(api.args)),
+        config=config,
         notes=args.wandb_log_notes,
         tags=args.wandb_log_tags,
         dir=args.wandb_log_dir,
@@ -683,8 +687,9 @@ def main():
                 candidate=True,
                 demo_samples=demo_samples,
                 sample_weight=args.sample_weight)
-            # 현재 샘플도 후보로 넣음
-            packed_samples = np.concatenate((np.expand_dims(samples, axis=1), packed_samples), axis=1)
+            if args.direct_variate:
+                # 현재 샘플도 후보로 넣음
+                packed_samples = np.concatenate((np.expand_dims(samples, axis=1), packed_samples), axis=1)
             
         if args.modality == 'text' or args.modality == 'time-series':
             packed_tokens = []
@@ -700,12 +705,12 @@ def main():
         packed_features = []
         logging.info('Running feature extraction')
 
-        for i in range(packed_samples.shape[1]):
+        for packed in packed_tokens:
             if args.experimental:
-                sub_packed_features = packed_tokens[:, i, :2]
+                sub_packed_features = packed[:, :2]
             else:
                 sub_packed_features = extract_features(
-                    data=packed_tokens[:, i],
+                    data=packed,
                     tmp_folder=args.tmp_folder,
                     model_name=args.feature_extractor,
                     res=args.private_sample_size,
@@ -713,25 +718,25 @@ def main():
                     device=f'cuda:{args.device}',
                     use_dataparallel=False,
                     modality=args.modality)
-            logging.info(
-                f'sub_packed_features.shape: {sub_packed_features.shape}')
+
             packed_features.append(sub_packed_features)
         if args.direct_variate:  # candidate로 생성한 variation을 사용할 경우
             # packed_features shape: (N_syn * num_candidate, embedding)
             packed_features = np.concatenate(packed_features, axis=0)
         else:  # 기존 DPSDA
             # packed_features shape: (N_syn, embedding)
-            packed_features = np.mean(packed_features, axis=0)
+            packed_features = np.mean(packed_features, axis=1)
+
         logging.info('Computing histogram')
         count = []
         count_1st_idx = []
+        if args.direct_variate:
+            num_samples_per_class_w_candidate = num_samples_per_class * (args.num_candidate + 1)
+            num_candidate = args.num_candidate + 1
+        else:
+            num_candidate = 0
+            num_samples_per_class_w_candidate = num_samples_per_class
         for class_i, class_ in enumerate(private_classes):
-            if args.direct_variate:
-                num_samples_per_class_w_candidate = num_samples_per_class * args.num_candidate
-                num_candidate = args.num_candidate
-            else:
-                num_candidate = 0
-                num_samples_per_class_w_candidate = num_samples_per_class
             if args.dp:
                 logging.info(f"Current diversity: {diversity[class_i]}")
                 sub_count, sub_clean_count, sub_losers, sub_1st_idx = dp_nn_histogram(
@@ -760,8 +765,8 @@ def main():
                     diversity[class_i] = updated_div
                     first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
                     wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], t, accum_loser.T.tolist())
-                if t < 8:
-                    first_vote_only[class_i] = True
+                # if t < 8:
+                #     first_vote_only[class_i] = True
             else:
                 sub_count, sub_losers, sub_1st_idx = nn_histogram(
                     synthetic_features=packed_features[
@@ -849,7 +854,7 @@ def main():
             new_indices = np.concatenate(new_indices)
             new_samples = samples[new_indices]
             new_additional_info = additional_info[new_indices]
-            logging.debug(f"new_indices: {new_indices}")
+            logging.info(f"new_indices: {new_indices}")
             logging.info('Generating new samples')
             new_new_samples = api.variation(
                 samples=new_samples,

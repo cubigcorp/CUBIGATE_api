@@ -61,7 +61,7 @@ def get_count_flat(ids: np.ndarray, dim: int, verbose: int, weights: Optional[np
 def get_count_stack(private_features: np.ndarray, synthetic_features: np.ndarray, num_candidate: int, index: faiss.Index, k: int) -> np.ndarray:
     indices = np.arange(synthetic_features.shape[0]).reshape((-1, num_candidate))
     counts = []
-    for idx in indices :
+    for i, idx in enumerate(indices) :
         index.add(synthetic_features[idx])
         _, ids = index.search(private_features, k=k)
         counter = Counter(list(ids.flatten()))
@@ -97,9 +97,9 @@ def sanity_check(counts: np.ndarray) -> bool:
     return len(counts) - np.count_nonzero(counts) == 0
 
 
-def get_losers(counts: np.ndarray, loser_lower_bound: float) -> np.ndarray:
+def get_losers(counts: np.ndarray, loser_lower_bound: float, max_vote: int) -> np.ndarray:
     logging.info("Counting losers")
-    losers = counts < loser_lower_bound
+    losers = counts < loser_lower_bound * max_vote
     logging.info(f"Total losers: {losers.sum()}")
     return losers
 
@@ -142,7 +142,8 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     _, ids = index.search(private_features, k=num_nearest_neighbor)
     counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)
     clean_count = counts.copy()
-    counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate)
+    if epsilon > 0:
+        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate)
     logging.info(f'Noisy count sum: {np.sum(counts)}')
     logging.info(f'Noisy count num>0: {np.sum(counts > 0)}')
     logging.info(f'Largest noisy counters: {np.flip(np.sort(counts.flatten()))[:50]}')
@@ -156,7 +157,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         index.reset()
         counts_1st_idx = np.flip(np.argsort(counts, axis=1), axis=1)[:, 0]
         counts = counts[np.arange(counts.shape[0]), counts_1st_idx].reshape((-1, 1))  # (Nsyn, 1)
-        losers = get_losers(counts, loser_lower_bound).reshape((-1, 1))  # (Nsyn, 1)
+        losers = get_losers(counts, loser_lower_bound, private_features.shape[0]).reshape((-1, 1))  # (Nsyn, 1)
         if losers.sum() == 0:
             return counts.flatten(), clean_count, losers, counts_1st_idx
         counts[losers] = 0
@@ -173,7 +174,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
             index=index)
         assert sanity_check(counts)
     else:
-        losers = np.array([False for _ in counts])  # (Nsyn)
+        losers = counts > 0  # (Nsyn)
         losers = np.expand_dims(losers, axis=1)  # (Nsyn, 1)
         counts_1st_idx = np.zeros_like(counts)
 

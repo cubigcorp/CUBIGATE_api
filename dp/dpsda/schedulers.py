@@ -7,11 +7,13 @@ import argparse
 
 class DegreeScheduler(ABC):
 
-    def __init__(self, T: int, base_deg: float, verbose: bool):
-        self._T = T
-        self._last_deg = base_deg
+    def __init__(self,
+                 args=None):
+        self._last_deg = -1
         self._step_count = 0
-        self._verbose = verbose
+        self._verbose = True
+        self._T = -1
+        self.args = args
 
     @staticmethod
     def command_line_parser():
@@ -20,6 +22,25 @@ class DegreeScheduler(ABC):
             '--scheduler_help',
             action='help')
         return parser
+
+
+    @classmethod
+    def from_command_line_args(cls, args, T, verbose = True):
+        """
+        Creating the API from command line arguments.
+
+        Args:
+            args: (List[str]):
+            The command line arguments
+        Returns:
+            DegreeScheduler:
+                The scheduler object.
+        """
+        args = cls.command_line_parser().parse_args(args)
+        scheduler = cls(**vars(args), args=args)
+        scheduler._T = T
+        scheduler._verbose = verbose
+        return scheduler
 
 
     def get_last_deg(self) -> float:
@@ -45,14 +66,14 @@ class DegreeScheduler(ABC):
 
 class StepDeg(DegreeScheduler):
     def __init__(self,
-                 T: int,
                  scheduler_base_deg: float,
                  scheduler_gamma: float,
                  scheduler_step_size: int,
-                 verbose: bool = True):
-        super().__init__(T, scheduler_base_deg, verbose)
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._gamma = scheduler_gamma
         self._step_size = scheduler_step_size
+        self._last_deg = scheduler_base_deg
 
     def _get_next_deg(self) -> float:
         if self._step_count % self._step_size == 0:
@@ -82,12 +103,12 @@ class StepDeg(DegreeScheduler):
 
 class ExponentialDeg(DegreeScheduler):
     def __init__(self,
-                 T: int,
                  scheduler_base_deg: float,
                  scheduler_gamma: float,
-                 verbose: bool = True):
-        super().__init__(T, scheduler_base_deg, verbose)
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._gamma = scheduler_gamma
+        self._last_deg = scheduler_base_deg
 
     def _get_next_deg(self) -> float:
         return self._last_deg * self._gamma
@@ -111,12 +132,11 @@ class ExponentialDeg(DegreeScheduler):
 
 class LinearDeg(DegreeScheduler):
     def __init__(self,
-                 T: int,
                  scheduler_base_deg: float,
                  scheduler_min_deg: float,
-                 verbose: bool = True):
-        super().__init__(T, scheduler_base_deg, verbose)
-        self._step_size = (scheduler_base_deg - scheduler_min_deg) / T
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._step_size = (scheduler_base_deg - scheduler_min_deg) / self._T
 
     def _get_next_deg(self) -> float:
         return self._last_deg  - self._step_size
@@ -140,10 +160,10 @@ class LinearDeg(DegreeScheduler):
 
 class ConstantDeg(DegreeScheduler):
     def __init__(self,
-                 T: int,
                  scheduler_base_deg: float,
-                 verbose: bool = True):
-        super().__init__(T, scheduler_base_deg, verbose)
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_deg = scheduler_base_deg
     
 
     @staticmethod
@@ -172,10 +192,3 @@ def get_scheduler_class_from_name(name: str):
     else:
         raise ValueError(f'Unknown scheduler name {name}')
 
-
-
-def get_scheduler(name: str, args: List, T: int) -> DegreeScheduler:
-    scheduler_class = get_scheduler_class_from_name(name)
-    args = scheduler_class.command_line_parser().parse_args(args)
-    scheduler = scheduler_class(**vars(args), T=T)
-    return scheduler

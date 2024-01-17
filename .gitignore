@@ -24,3 +24,4 @@ CUBIGate/result/**/*_debug.npz
 *.log
 *.sh
 *.json
+wandb
