@@ -372,7 +372,7 @@ def parse_args():
         if (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
             raise ValueError('The length of num_samples_schedule and '
                             'variation_degree_schedule should be the same')
-    T = args.num_samples if args.num_samples > 0 else len(args.num_samples_schedule)
+    T = args.T if args.T > 0 else len(args.num_samples_schedule)
     if args.sample_weight < 1:
         assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
