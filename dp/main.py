@@ -547,8 +547,6 @@ def main():
                 prompt=args.initial_prompt)
             start_t = 1
         else:
-            if args.modality=="tabular":
-                args.initial_prompt, public_info, columns=attrPrompt(args)
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
@@ -663,7 +661,7 @@ def main():
                             np.arange(num_samples_per_class * class_i,
                                     num_samples_per_class * (class_i + 1)),
                             size=args.demonstration,
-                            p=sub_count / total_sub_count,
+                            p=sub_count / sub_count.sum(),
                             replace=False)
                         demo_indices.append(sub_indices)
                 demo_indices = np.concatenate(demo_indices)
