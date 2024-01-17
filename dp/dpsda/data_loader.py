@@ -10,13 +10,13 @@ from typing import Tuple, Optional
 from .dataset import ImageDataset, TextDataset, EXTENSIONS, list_files_recursively
 
 
-def load_private_data(data_dir, batch_size, image_size, class_cond,
+def load_private_data(data_dir, batch_size, sample_size, class_cond,
               num_private_samples, modality: str, model=None):
 
     if modality == 'image':
         transform = T.Compose([
-            T.Resize(image_size),
-            T.CenterCrop(image_size),
+            T.Resize(sample_size),
+            T.CenterCrop(sample_size),
             T.ToTensor()
         ])
         dataset = ImageDataset(folder=data_dir, transform=transform)
