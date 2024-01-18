@@ -10,17 +10,17 @@ from typing import Tuple, Optional
 from .dataset import ImageDataset, TextDataset, EXTENSIONS, list_files_recursively
 
 
-def load_private_data(data_dir, batch_size, image_size, class_cond,
+def load_private_data(data_dir, batch_size, sample_size, class_cond,
               num_private_samples, modality: str, model=None):
 
     if modality == 'image':
         transform = T.Compose([
-            T.Resize(image_size),
-            T.CenterCrop(image_size),
+            T.Resize(sample_size),
+            T.CenterCrop(sample_size),
             T.ToTensor()
         ])
         dataset = ImageDataset(folder=data_dir, transform=transform)
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series' or modality=="tabular":
         dataset = TextDataset(folder=data_dir, model=model)
 
     loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=10,
@@ -48,7 +48,7 @@ def load_private_data(data_dir, batch_size, image_size, class_cond,
         all_samples = np.around(np.clip(
             all_samples * 255, a_min=0, a_max=255)).astype(np.uint8)
         all_samples = np.transpose(all_samples, (0, 2, 3, 1))
-    elif modality == 'text':
+    elif modality == 'text' or modality == 'time-series' or modality=="tabular":
         all_samples = all_samples.astype(np.int32)
     if class_cond:
         all_labels = np.concatenate(all_labels, axis=0)
@@ -74,7 +74,7 @@ def load_public_data(data_folder: str, modality: str, num_public_samples: int, p
             with bf.BlobFile(path, 'rb') as f:
                 sample = Image.open(f)
                 sample.load()
-        elif modality == 'text':
+        elif modality == 'text' or modality == 'time-series' or "tabular":
             with bf.BlobFile(path, 'r') as f:
                 sample = f.read()
         samples.append(sample)

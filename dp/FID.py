@@ -86,7 +86,7 @@ def argument():
         action='store_true',
         help='Whether to generate class labels')
     parser.add_argument(
-        '--private_image_size',
+        '--private_sample_size',
         type=int,
         default=1024,
         help='Size of private images')
@@ -103,7 +103,7 @@ args = argument()
 all_private_samples, all_private_labels = load_private_data(
         data_dir=args.data_folder,
         batch_size=args.data_loading_batch_size,
-        image_size=args.private_image_size,
+        sample_size=args.private_sample_size,
         class_cond=args.gen_class_cond,
         num_private_samples=args.num_private_samples,
         modality=args.modality,
@@ -112,7 +112,7 @@ metric = 'FID' if len(all_private_samples) > 2048 else 'KID'
 make_fid_stats(
             samples=all_private_samples,
             dataset=args.fid_dataset_name,
-            dataset_res=args.private_image_size,
+            dataset_res=args.private_sample_size,
             dataset_split=args.fid_dataset_split,
             tmp_folder=args.tmp_folder,
             model_name=args.fid_model_name,
@@ -131,7 +131,7 @@ score = compute_metric(
     modality=args.modality,
     tmp_folder=args.tmp_folder,
     dataset=args.fid_dataset_name,
-    dataset_res=args.private_image_size,
+    dataset_res=args.private_sample_size,
     dataset_split=args.fid_dataset_split,
     batch_size=args.fid_batch_size,
     num_fid_samples=args.num_fid_samples,

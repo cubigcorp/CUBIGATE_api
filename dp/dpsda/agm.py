@@ -5,6 +5,8 @@ def get_epsilon(epsilon: float, T: int) -> float:
     """
     https://arxiv.org/abs/1905.02383
     """
+    if epsilon == 0:
+        return 0.
     eps = epsilon ** 2
     total_epsilon = sqrt(eps * T)
     return total_epsilon
@@ -21,7 +23,6 @@ def get_sigma(epsilon, delta, GS, tol = 1.e-12):
     Output:
     sigma : standard deviation of Gaussian noise needed to achieve (epsilon,delta)-DP under global sensitivity GS
     """
-
     def Phi(t):
         return 0.5*(1.0 + erf(float(t)/sqrt(2.0)))
 
