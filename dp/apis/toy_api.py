@@ -29,7 +29,6 @@ class ToyAPI(API):
         shape, y_position, x_position = prompts
         bounding = get_bounding(y_position, x_position, size, self.ratio)
         samples = get_samples_out_bounding(shape, self.rng, num_samples, bounding, size, self.ratio)
-        samples = normalize(samples, size)
         return_prompts = np.repeat(prompts, num_samples)
 
         return samples, np.array(return_prompts)

@@ -747,7 +747,7 @@ def main():
         count_1st_idx = []
         if args.direct_variate:
             num_samples_per_class_w_candidate = num_samples_per_class * (args.num_candidate + 1)
-            num_candidate = args.num_candidate + 1
+            num_candidate = packed_samples.shape[1]
         else:
             num_candidate = 0
             num_samples_per_class_w_candidate = num_samples_per_class

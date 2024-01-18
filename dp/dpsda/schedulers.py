@@ -112,7 +112,11 @@ class ExponentialDeg(DegreeScheduler):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._gamma = scheduler_gamma
-        self._last_deg = scheduler_base_deg
+        self._base_deg = scheduler_base_deg
+
+
+    def setting(self):
+        self._last_deg = self._base_deg
 
     def _get_next_deg(self) -> float:
         return self._last_deg * self._gamma
@@ -175,8 +179,11 @@ class ConstantDeg(DegreeScheduler):
                  scheduler_base_deg: float,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._last_deg = scheduler_base_deg
-    
+        self._base_deg = scheduler_base_deg
+
+
+    def setting(self):
+        self._last_deg = self._base_deg
 
     @staticmethod
     def command_line_parser():

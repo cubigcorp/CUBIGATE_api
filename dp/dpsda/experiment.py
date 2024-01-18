@@ -21,16 +21,46 @@ def get_xy(position: str, ratio: float) -> float:
     return p
 
 
+
+def get_filter(arr: np.ndarray, lower: float, upper: float, tgt: int) -> np.ndarray:
+    idx, xy = np.where((lower > arr) | (arr > upper))
+    xy_filter = [idx[i] for i in range(len(idx)) if xy[i] == tgt]
+    return xy_filter
+
+
+
 def get_samples_out_bounding(shape: str, rng: np.random.Generator, num_data: int, bounding: Tuple, size: str, ratio: float, distinctive: int = 10) -> np.ndarray:
-    x_dim, y_dim = list(map(int, size.split('x')))
     (x, y, w, h) = bounding
-    x =  x_dim * ratio if x == 0 else 0
-    y = y_dim * ratio if y == 0 else 0
-    samples = get_samples(shape, rng, num_data, distinctive, (x, y, w, h))
-    return samples
+    samples = []
+    diff = num_data
+    while diff > 0:
+        temp = get_samples(shape, rng, diff, size=size)
+        filter_x = get_filter(temp, x, x + w, 0)
+        filter_y = get_filter(temp, y, y + h, 1)
+        filter_xy = np.intersect1d(filter_x, filter_y)[:diff]
+        if len(filter_xy) == 0:
+            continue
+        diff -= len(filter_xy)
+        temp = temp[filter_xy]
+        samples.append(temp)
+    samples = np.concatenate(samples).reshape((-1, 2))
+    samples = add_colors(samples, num_data, rng, distinctive)
+    return normalize(samples, size)
 
 
-def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive: int = 10, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
+
+def add_colors(samples: np.ndarray, num_data: int, rng: np.random.Generator, distinctive: int = 10) -> np.ndarray:
+    if distinctive > num_data:
+        distinctive = num_data
+    other_color_idx = rng.choice(num_data, size=distinctive, replace=False).tolist()
+    colors = np.array([other_color_idx.index(idx) if idx in other_color_idx else -1 for idx in range(num_data)]).reshape((-1, 1))
+    logging.info(other_color_idx)
+    return np.concatenate((samples, colors), axis=1)
+
+
+
+
+def get_samples(shape: str, rng: np.random.Generator, num_data: int, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
     assert (bounding is None) ^ (size is None)
     if bounding is not None:
         x, y, w, h = bounding
@@ -38,11 +68,7 @@ def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive
         x = y = 0
         w, h = list(map(int, size.split('x')))
 
-    if distinctive > num_data:
-        distinctive = num_data
-    other_color_idx = rng.choice(num_data, size=distinctive, replace=False).tolist()
-    colors = np.array([other_color_idx.index(idx) if idx in other_color_idx else -1 for idx in range(num_data)]).reshape((-1, 1))
-    logging.info(other_color_idx)
+    
     if shape == 'square':
         x_values = rng.uniform(low=x, high=x + w, size=num_data)
         y_values = rng.uniform(low=y, high=y + h, size=num_data)
@@ -59,9 +85,7 @@ def get_samples(shape: str, rng: np.random.Generator, num_data: int, distinctive
             samples.append(sample)
     else:
         raise ValueError(f"Unknown shape: {shape}")
-
-    samples = np.concatenate((np.stack(samples), colors), axis=1)
-    return samples
+    return np.stack(samples)
 
 
 def get_bounding(y_position: str, x_position: str, size: str, ratio: float) -> Tuple:
@@ -120,4 +144,3 @@ def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: s
     plt.savefig(os.path.join(dir, f"{step}_plot.png"))
     wandb.log({"syn_in_prv": syn_in_prv, 't': step})
     wandb.log({'plot' : wandb.Image(fig), 't': step})
-    
