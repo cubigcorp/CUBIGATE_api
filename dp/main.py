@@ -639,7 +639,7 @@ def main():
                             num_samples_per_class * class_i:
                             num_samples_per_class * (class_i + 1)]
                     sub_num_vote = all_private_features[
-                        all_private_labels == class_].shape[0]
+                        all_private_labels == class_].shape[0] - args.count_threshold
                     sub_ratio = np.divide(sub_count, sub_num_vote)
                     share = 1 - np.clip(sub_ratio, 0, 0.9)
                     sub_degree = np.multiply(share, variation_degree_t)
