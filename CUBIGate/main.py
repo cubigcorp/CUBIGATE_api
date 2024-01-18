@@ -52,7 +52,3 @@ def select_measured(measured: str, variated: str) -> str:
     return selected
 
 
-
-# init_path = "result/cookie/2/_samples.npz"
-# second_out = variate_prev_data(init_path)
-# print(second_out)

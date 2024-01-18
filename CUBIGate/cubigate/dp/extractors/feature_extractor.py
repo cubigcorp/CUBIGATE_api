@@ -1,5 +1,7 @@
 import imageio
 import cleanfid
+from cleanfid.features import build_feature_extractor
+from cleanfid.fid import get_files_features
 import os
 import shutil
 import numpy as np
@@ -26,7 +28,7 @@ def extract_features(
     if model_name == 'original':
         return data.reshape((data.shape[0], -1)).astype(np.float32)
     elif model_name == "inception_v3":
-        feat_model = cleanfid.features.build_feature_extractor(
+        feat_model = build_feature_extractor(
             mode=mode,
             device=device,
             use_dataparallel=use_dataparallel
@@ -53,7 +55,7 @@ def extract_features(
     files = [os.path.join(tmp_folder, f'{i}.png')
             for i in range(data.shape[0])]
 
-    np_feats = cleanfid.fid.get_files_features(
+    np_feats = get_files_features(
         l_files=files,
         model=feat_model,
         num_workers=num_workers,
