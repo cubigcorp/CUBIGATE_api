@@ -39,7 +39,7 @@ parameters:
     value: 0.4
   private_ratio:
     value: 0.4
-  use_scheduler:
+  use_degree_scheduler:
     value: True
   variation_degree_scheduler:
     value: linear

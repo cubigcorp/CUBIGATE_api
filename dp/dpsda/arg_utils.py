@@ -27,3 +27,17 @@ def split_args(args: List):
     scheduler_args = np_args[indices].tolist()
     api_args = np.delete(np_args, indices).tolist()
     return api_args, scheduler_args
+
+
+
+def split_schedulers_args(args: List):
+    indices = []
+    np_args = np.asanyarray(args)
+
+    for i in range(0, len(args), 2):
+        if 'degree' in args[i]:
+            indices.extend([i, i+1])
+
+    scheduler_args = np_args[indices].tolist()
+    weight_args = np.delete(np_args, indices).tolist()
+    return weight_args, scheduler_args

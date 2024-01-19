@@ -13,54 +13,56 @@ from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
-from dpsda.arg_utils import str2bool, split_args
+from dpsda.arg_utils import str2bool, split_args, split_schedulers_args
 from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data, log_plot
-from dpsda.schedulers import get_scheduler_class_from_name
+from dpsda.schedulers.scheduler import get_scheduler_class_from_name
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    toy_group = parser.add_argument_group("Toy experiment")
+    toy_group.add_argument(
         '--experimental',
         type=str2bool,
         default=False,
         help="Whether it is just experimental with toy data."
     )
-    parser.add_argument(
+    toy_group.add_argument(
         '--toy_data_type',
         type=str,
         default="square_upper_right",
         help="[SHAPE]_[Y_POSITION]_[X_POSITION]"
     )
-    parser.add_argument(
+    toy_group.add_argument(
         '--toy_private_bounding_ratio',
         type=float,
         default=0.0
     )
-    parser.add_argument(
+    wandb_group = parser.add_argument_group("Wandb")
+    wandb_group.add_argument(
         '--wandb_log_notes',
         type=str,
         default="",
         help="Notes to describe the experiment on wandb"
     )
-    parser.add_argument(
+    wandb_group.add_argument(
         '--wandb_log_tags',
         type=str,
         default='',
         help="Tags to classify the experiement on wandb"
     )
-    parser.add_argument(
+    wandb_group.add_argument(
         '--wandb_log_dir',
         type=str,
         default='/mnt/cubigate/',
         help="An absolute path to a directory where metadata will be stored"
     )
-    parser.add_argument(
+    wandb_group.add_argument(
         '--wandb_resume_id',
         type=str,
         default=None,
@@ -87,24 +89,35 @@ def parse_args():
         type=int,
         default=2024
     )
-    parser.add_argument(
+    ours_group = parser.add_argument_group("Ours")
+    ours_group.add_argument(
+        '--use_weight_scheduler',
+        type=str2bool,
+        default=False
+    )
+    ours_group.add_argument(
+        '--weight_scheduler',
+        type=str,
+        default=""
+    )
+    ours_group.add_argument(
         '--sample_weight',
         type=float,
         default=1.0,
         help="Weights for sample variation compared to demonstration"
     )
-    parser.add_argument(
+    ours_group.add_argument(
         '--direct_variate',
         type=str2bool,
         required=False,
         help="Whether to use candidate variations"
     )
-    parser.add_argument(
+    ours_group.add_argument(
         '--use_public_data',
         type=str2bool,
         default=False,
         help="Whether to use public data")
-    parser.add_argument(
+    ours_group.add_argument(
         '--public_data_folder',
         type=str,
         required=False,
@@ -138,7 +151,7 @@ def parse_args():
         '--live_loading_target',
         type=str,
         required=False)
-    parser.add_argument(
+    ours_group.add_argument(
         '--demonstration',
         type=int,
         required=False,
@@ -146,13 +159,13 @@ def parse_args():
     parser.add_argument(
         '--modality',
         type=str,
-        choices=['image', 'text', 'time-series', "tabular"], #Tabular: text
+        choices=['image', 'text', 'time-series', "tabular"], 
         default='toy')
     parser.add_argument(
         '--api',
         type=str,
         required=True,
-        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'toy', 'noapi'], #Tabular_1:Chatgpt
+        choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'toy', 'noapi'], 
         help='Which foundation model API to use')
     parser.add_argument(
         '--plot_images',
@@ -196,7 +209,7 @@ def parse_args():
         default='0,'*9 + '0',
         help='Variation degree at each iteration')
     parser.add_argument(
-        '--use_scheduler',
+        '--use_degree_scheduler',
         type=str2bool
     )
     parser.add_argument(
@@ -347,8 +360,14 @@ def parse_args():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, other_args = parser.parse_known_args()
-    if args.use_scheduler:
+    if args.use_degree_scheduler or args.use_weight_scheduler:
         api_args, scheduler_args = split_args(other_args)
+        if not args.use_degree_scheduler:  # weight scheduler only
+            weight_args = scheduler_args
+        elif not args.use_weight_scheduler:  # degree scheduler only 
+            degree_args = scheduler_args
+        else:  # both
+            weight_args, degree_args = split_schedulers_args(scheduler_args)
     else:
         api_args = other_args
     live_save_folder = args.result_folder if args.save_samples_live else None
@@ -368,7 +387,7 @@ def parse_args():
     if args.num_samples > 0:
         assert args.T > 0, "Specify how many variations to run."
 
-    if ((not args.use_scheduler) and args.T == 0 ):
+    if ((not args.use_degree_scheduler) and args.T == 0 ):
         if (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
             raise ValueError('The length of num_samples_schedule and '
                             'variation_degree_schedule should be the same')
@@ -377,9 +396,18 @@ def parse_args():
         assert args.demonstration > 0
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
-    scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler)
-    scheduler = scheduler_class.from_command_line_args(args=scheduler_args, T=T) if args.use_scheduler else None
-    return args, api, scheduler
+    if args.use_degree_scheduler:
+        degree_scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler, 'degree')
+        degree_scheduler = degree_scheduler_class.from_command_line_args(args=degree_args, T=T)
+    else:
+        degree_scheduler =None
+    if args.use_weight_scheduler:
+        assert args.demonstration > 0
+        weight_scheduler_class = get_scheduler_class_from_name(args.weight_scheduler, 'weight')
+        weight_scheduler = weight_scheduler_class.from_command_line_args(args=weight_args, T=T)
+    else:
+        weight_scheduler =None
+    return args, api, degree_scheduler, weight_scheduler
 
 
 def round_to_uint8(image):
@@ -444,7 +472,7 @@ def wandb_logging(private_labels: List, diversity: List, first_vote_only: List, 
 
 
 def main():
-    args, api, scheduler = parse_args()
+    args, api, degree_scheduler, weight_scheduler = parse_args()
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     log_file = os.path.join(args.result_folder, 'log.log')
@@ -465,8 +493,8 @@ def main():
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
     config = dict(vars(args), **vars(api.args))
-    if args.use_scheduler:
-        config.update(**vars(scheduler.args))
+    if args.use_degree_scheduler:
+        config.update(**vars(degree_scheduler.args))
     wandb.init(
         entity='cubig_ai',
         project="AZOO",
@@ -623,7 +651,7 @@ def main():
         logging.info(f't={t}')
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
-        variation_degree_t = scheduler.step() if args.use_scheduler else args.variation_degree_schedule[t]
+        variation_degree_t = degree_scheduler.step() if args.use_degree_scheduler else args.variation_degree_schedule[t]
         if args.num_candidate == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
@@ -650,13 +678,10 @@ def main():
                 variation_degree = variation_degree_t
                     
             # demonstration
-            if (args.sample_weight < 1) and ('count' in vars()):
+            if ((args.sample_weight < 1) or args.use_weight_scheduler) and ('count' in vars()):
                 demo_indices = []  # (Nsyn * demonstrations)
                 logging.info('Getting demonstrations')
                 for class_i in private_classes:
-                    # if 'count' in vars():
-                        # count 정보가 있는 경우 이를 활용
-                        # (Nsyn)
                     sub_count = count[
                         num_samples_per_class * class_i:
                         num_samples_per_class * (class_i + 1)]
@@ -664,34 +689,41 @@ def main():
                         num_samples_per_class * class_i:
                         num_samples_per_class * (class_i + 1)]
                     sub_count[sub_losers] = 0
-                        
-                    # else:
-                    #     # count 정보가 없는 경우 random으로 뽑기
-                    #     # (Nsyn)
-                    #     sub_count = np.ones(shape=(num_samples_per_class))
+                    
+                    # Sort counts
+                    sub_counts_sorted_idx = np.flip(np.argsort(sub_count))
+                    sub_counts_idx = np.tile(sub_counts_sorted_idx, (len(sub_counts_sorted_idx), 1))
+                    sub_row_idx, sub_col_idx = np.indices(sub_counts_idx.shape)
+                    # Only superior samples as demonstration
+                    sub_counts_idx[(sub_col_idx > sub_row_idx) | (sub_col_idx == sub_row_idx)] = -1
+                    sub_p = np.array([sub_count[idx] if idx >= 0 else 0 for idx in sub_counts_idx.flat]).reshape((args.num_samples, args.num_samples))
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        sub_p = np.nan_to_num(sub_p / np.sum(sub_p, axis=1).reshape((-1, 1)))
 
-                    # Nsyn >> demonstration
-                    for _ in range(num_samples_per_class):
-                        sub_indices = rng.choice(
-                            np.arange(num_samples_per_class * class_i,
-                                    num_samples_per_class * (class_i + 1)),
-                            size=args.demonstration,
-                            p=sub_count / sub_count.sum(),
-                            replace=False)
-                        demo_indices.append(sub_indices)
+                    # Sampling demonstrations' index
+                    num_demo = [args.demonstration if idx >= args.demonstration else idx for idx in range(len(sub_count))]
+                    sub_indices = [
+                        np.repeat(-1, args.demonstration) if np.all(sub_p[idx]==0)
+                        else np.concatenate((rng.choice(sub_counts_idx[idx], num_demo[idx], replace=False, p=sub_p[idx]), np.full(abs(args.demonstration - num_demo[idx]), -1)))
+                        for idx in range(len(sub_count))]
+                    sub_indices = np.stack(sub_indices)
+                    demo_indices.append(sub_indices)
                 demo_indices = np.concatenate(demo_indices)
+                no_demo_filter = demo_indices == -1
+                demo_indices[no_demo_filter] = 0
                 demo_samples = samples[demo_indices]
-                shape = samples.shape
-                demo_shape = (shape[0], args.demonstration) + shape[1:]
-                demo_samples = demo_samples.reshape(demo_shape)
-                # Sorting demo samples bssed on count
-                demo_counts = count[demo_indices].reshape((-1, args.demonstration))
-                demo_sorted_idx = np.flip(np.argsort(demo_counts, axis=1), axis=1)
-                demo_samples = demo_samples[np.arange(demo_samples.shape[0])[:, None], demo_sorted_idx]
+                demo_samples[no_demo_filter] = np.zeros_like(samples[0])  # (Nsyn, demo, ~)
                 logging.info(f'Demonstration samples shape: {demo_samples.shape}')
+                
+                # Assigning weights to demonstrations
+                demo_counts = count[demo_indices].reshape((-1, args.demonstration))
+                demo_counts[no_demo_filter] = 0.
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    demo_weights = np.nan_to_num(demo_counts / np.sum(demo_counts, axis=1).reshape((-1, 1)))
             else:
-                demo_samples = None
+                demo_samples  = demo_weights = None
             logging.info('Running sample variation')
+            sample_weight_t = weight_scheduler.step() if args.use_weight_scheduler else args.sample_weight
             packed_samples =api.variation(
                 samples=samples,
                 additional_info=additional_info,
@@ -701,7 +733,8 @@ def main():
                 t=t,
                 candidate=True,
                 demo_samples=demo_samples,
-                sample_weight=args.sample_weight)
+                demo_weights = demo_weights,
+                sample_weight=sample_weight_t)
             if args.direct_variate:
                 # 현재 샘플도 후보로 넣음
                 packed_samples = np.concatenate((np.expand_dims(samples, axis=1), packed_samples), axis=1)

@@ -34,7 +34,7 @@ class ToyAPI(API):
         return samples, np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, candidate=True, demo_samples: Optional[np.ndarray]=None, sample_weight: float = 1.0):
+                        num_variations_per_sample, size, variation_degree, t=None, candidate=True, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(
@@ -42,11 +42,12 @@ class ToyAPI(API):
                 additional_info=additional_info,
                 variation_degree=variation_degree,
                 demo_samples=demo_samples,
+                demo_weights=demo_weights,
                 sample_weight=sample_weight)
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, variation_degree: Union[np.ndarray, float], demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+    def _variation(self, samples: np.ndarray, additional_info: np.ndarray, variation_degree: Union[np.ndarray, float], demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         coordinates, colors = np.array_split(samples, 2, axis=1)
         sample_variate = np.zeros_like(coordinates)
         demo_variate = np.zeros_like(coordinates)
@@ -60,7 +61,10 @@ class ToyAPI(API):
                 sample_weight = 1.0
             else:
                 # demonstration-based
-                demo_variate = np.average(demo_samples[:, :, :2], axis=1, weights=np.arange(demo_samples.shape[1], 0, -1))
+                demo_variate = np.array([
+                    np.zeros_like(demo_samples[0, 0, :2]) if np.all(demo_samples[i, :, :2] == 0)
+                    else np.average(demo_samples[i, :, :2], axis=0, weights=demo_weights[i])
+                    for i in range(demo_samples.shape[0])])
 
         variations = np.clip(sample_weight * sample_variate + (1 - sample_weight) * demo_variate, a_min=-1, a_max=1)
         variations = np.concatenate((variations, colors), axis=1)

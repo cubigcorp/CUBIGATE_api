@@ -414,7 +414,7 @@ class NoAPI(API):
         return samples, return_prompt
 
     def variation(self, samples: np.ndarray, additional_info: np.ndarray,
-                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         if isinstance(variation_degree, np.ndarray):
             if np.any(0 > variation_degree) or np.any(variation_degree > 1):
                 raise ValueError('variation_degree should be between 0 and 1')

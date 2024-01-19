@@ -160,7 +160,6 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         losers = get_losers(counts, loser_lower_bound, private_features.shape[0]).reshape((-1, 1))  # (Nsyn, 1)
         if losers.sum() == 0:
             return counts.flatten(), clean_count, losers, counts_1st_idx
-        counts[losers] = 0
         # first_vote_only = diversity_check(losers, diversity, counts.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
         # if first_vote_only:
         #     return counts.flatten(), clean_count, losers, counts_1st_idx
