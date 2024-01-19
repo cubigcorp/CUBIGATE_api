@@ -7,12 +7,12 @@ import logging
 from .dataset import ImageDataset
 
 
-def load_data(data_dir, batch_size, sample_size, class_cond,
+def load_data(data_dir, batch_size, image_size, class_cond,
               num_private_samples):
 
     transform = T.Compose([
-        T.Resize(sample_size),
-        T.CenterCrop(sample_size),
+        T.Resize(image_size),
+        T.CenterCrop(image_size),
         T.ToTensor()
     ])
     dataset = ImageDataset(folder=data_dir, transform=transform)

@@ -52,3 +52,6 @@ def select_measured(measured: str, variated: str) -> str:
     return selected
 
 
+
+path = train_data_generation_model()
+t = generate_dp_data(base_data=path)

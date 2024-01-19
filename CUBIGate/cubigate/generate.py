@@ -1,7 +1,8 @@
 import logging
 import os
 import numpy as np
-from typing import Optional, List
+import uuid
+from typing import List
 from cubigate.dp.utils.logging import setup_logging
 from cubigate.dp.data_loader import load_data, load_samples, load_count
 from cubigate.dp.extractors.feature_extractor import extract_features
@@ -18,7 +19,7 @@ class CubigDPGenerator():
         self, 
         api: str = "stable_diffusion",
         feature_extractor: str = "inception_v3",
-        result_folder: str = "result/cookie",
+        result_folder: str = "/var/dp_msv",
         tmp_folder: str = "./tmp/cookie",
         data_loading_batch_size: int = 100,
         feature_extractor_batch_size: int = 500,
@@ -67,10 +68,8 @@ class CubigDPGenerator():
         if not os.path.exists(result_folder):
             os.makedirs(result_folder)
 
-        # 0-b. Set up logging
-        setup_logging(os.path.join(result_folder, 'log.log'))
 
-        # 0-c. Declare class variables
+        # 0-b. Declare class variables
         self.api_class = get_api_class_from_name(api)  # Name of the foundation model API
         self.result_folder = result_folder
         self.data_loading_batch_size = data_loading_batch_size
@@ -82,6 +81,10 @@ class CubigDPGenerator():
         self.tmp_folder = tmp_folder
         self.prompt = prompt
         self.rng = np.random.default_rng(seed)
+        self.name = uuid.uuid4().hex
+        
+        # 0-x. Set up logging
+        setup_logging(os.path.join(result_folder, f'{self.name}.log'))
 
     def initialize(
         self,
@@ -156,7 +159,7 @@ class CubigDPGenerator():
             if checkpoint_step < 0:
                 raise ValueError('data_checkpoint_step should be >= 0')
             self.start_t = checkpoint_step + 1
-            self.folder = f'{self.result_folder}/{self.start_t}'
+            self.folder = f'{self.result_folder}/train/{self.start_t}'
         # 4-b. Generate initial population
         else:
             samples = self.api.random_sampling(
@@ -166,12 +169,13 @@ class CubigDPGenerator():
             log_samples(
                 samples=samples,
                 folder=self.folder,
-                plot_samples=plot_images)
+                plot_samples=plot_images,
+                prefix=self.name)
             if checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step')
             self.start_t = 1
 
-        return f'{self.folder}/_samples.npz'
+        return f'{self.folder}/{self.name}_samples.npz'
 
 
     def train(
@@ -180,7 +184,7 @@ class CubigDPGenerator():
         epsilon: float,
         delta: float,
         data_folder: str = "./input_data/cookie",
-        checkpoint_path: str = "./result/cookie/1/_samples.npz",
+        checkpoint_path: str = "",
         checkpoint_step: int = 1,
         num_samples: int = 10,
         variation_degree_schedule: List[float] = [],
@@ -236,7 +240,7 @@ class CubigDPGenerator():
                         '--API_checkpoint', 'stabilityai/sdxl-turbo',
                         '--guidance_scale', '0',
                         '--inference_steps', '2',
-                        '--API_batch_size', '10',
+                        '--API_batch_size', '1',
                         ]
         api_args.extend(['--prompt', self.prompt])
         
@@ -250,7 +254,7 @@ class CubigDPGenerator():
             checkpoint_path=checkpoint_path,
             checkpoint_step=checkpoint_step
         )
-        self.folder = f'{self.result_folder}/{self.start_t + 1}' if self.start_t == 1 else f'{self.result_folder}/{self.start_t}'
+        self.folder = f'{self.result_folder}/train/{self.start_t + 1}' if self.start_t == 1 else f'{self.result_folder}/train/{self.start_t}'
         # Start learning
         for t in range(self.start_t, iteration):
             logging.info(f"t={t}")
@@ -276,11 +280,12 @@ class CubigDPGenerator():
             # 4. Select the fittest candidate of each sample
             self.select(
                 dist_path=count_path,
-                samples_path=samples_path,
+                samples_path=packed_samples_path,
                 num_candidate=num_candidate
             )
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
-        return f'{self.folder}/_samples.npz'
+        shutil.rmtree(self.tmp_folder, ignore_errors=True)
+        return f'{self.folder}/{self.name}_samples.npz'
 
 
     def generate(
@@ -289,7 +294,6 @@ class CubigDPGenerator():
         img_size: str = '512x512',
         num_samples: int = 2,
         variation_degree: float = 0.5,
-        plot_images: bool = False,
         api_args: List = []
     ) -> zipfile.ZipFile:
         """
@@ -305,8 +309,6 @@ class CubigDPGenerator():
             Number of samples to generate
         variation_degree:
             Variation degree
-        plot_images:
-            Whether to save generated images in PNG files
 
         Returns
         ----------
@@ -318,7 +320,7 @@ class CubigDPGenerator():
                 '--API_checkpoint', 'stabilityai/sdxl-turbo',
                 '--guidance_scale', '0',
                 '--inference_steps', '2',
-                '--API_batch_size', '10',
+                '--API_batch_size', '1',
                 ]
         api_args.extend(['--prompt', self.prompt])
 
@@ -329,32 +331,30 @@ class CubigDPGenerator():
         # 2. Load base data
         samples = load_samples(base_data)
 
-        # Generate samples as variations of base data
+        # 3. Generate samples as variations of base data
         if num_samples != len(samples):
             target_idx = np.random.choice(len(samples), num_samples, replace=True)
         target_samples = samples[target_idx]
         width, height = list(map(int, img_size.split('x')))
-        for i, sample in enumerate(target_samples):
-            sample = sample.reshape(1, width, height, -1)
-            sample = self.api.variation(
-                samples=sample,
-                num_variations_per_sample=1,
-                size=img_size,
-                variation_degree=variation_degree)
-            log_samples(
-                samples=samples,
-                folder=f'{self.result_folder}/gen',
-                plot_samples=plot_images)
-        generated_image_datas=np.load(f'{self.result_folder}/gen/_samples.npz')
-        generated_image_datas=generated_image_datas["samples"]
-        zip_path = os.path.join(self.result_folder, 'gen', 'zip')
-        for i, image in enumerate(generated_image_datas):
-            os.makedirs(zip_path, exist_ok=True)
-            Image.fromarray(image).save(os.path.join(zip_path, f"{i}.png"))
-        shutil.make_archive(os.path.join(self.result_folder, 'gen', "synthetic_image"), 'zip', zip_path)
+        gen_samples = self.api.variation(
+            samples=target_samples,
+            num_variations_per_sample=1,
+            size=img_size,
+            variation_degree=variation_degree).reshape((num_samples, width, height, -1))
+        log_samples(
+            samples=gen_samples,
+            folder=f'{self.result_folder}/generate/{self.name}',
+            plot_samples=True,
+            save_npz=False)
+        shutil.make_archive(
+            f'{self.result_folder}/generate/{self.name}',
+            'zip',
+            root_dir=self.result_folder,
+            base_dir=f'generate/{self.name}')
+        shutil.rmtree(f'{self.result_folder}/generate/{self.name}', ignore_errors=True)
         
         #TODO: zip파일을 서버에 저장안하도록 바꾸면 더 좋을 것 같다.
-        synthetic_img_zip=zipfile.ZipFile(f"{self.result_folder}/gen/synthetic_image.zip")
+        synthetic_img_zip=zipfile.ZipFile(f'{self.result_folder}/generate/{self.name}.zip')
         
         return synthetic_img_zip
 
@@ -394,8 +394,9 @@ class CubigDPGenerator():
             folder=self.folder,
             plot_samples=False,
             save_npz=True,
-            prefix='packed')
-        return f'{self.folder}/packed_samples.npz'
+            prefix=f'{self.name}_packed')
+        print(f"packed: {packed_samples.shape}")
+        return f'{self.folder}/{self.name}_packed_samples.npz'
 
 
     def measure(
@@ -432,17 +433,18 @@ class CubigDPGenerator():
         """
         samples = load_samples(samples_path)
         packed_features = []
-        for i in range(samples.shape[1]):
+        for sample in samples:
             sub_packed_features = extract_features(
-                data=samples[:, i],
+                data=sample,
                 tmp_folder=self.tmp_folder,
                 model_name=self.feature_extractor,
                 res=self.prv_img_size,
                 batch_size=self.feature_extractor_batch_size)
-            logging.info(
-                f'sub_packed_features.shape: {sub_packed_features.shape}')
+
             packed_features.append(sub_packed_features)
+        # packed_features shape: (N_syn * num_candidate, embedding)
         packed_features = np.concatenate(packed_features, axis=0)
+
 
 
         count = []
@@ -463,8 +465,8 @@ class CubigDPGenerator():
                 num_candidate=num_candidate)
             count.append(sub_count)
         count = np.concatenate(count)
-        log_count(count, f'{self.folder}/count.npz')
-        return f'{self.folder}/count.npz'
+        log_count(count, f'{self.folder}/{self.name}_count.npz')
+        return f'{self.folder}/{self.name}_count.npz'
 
 
     def select(
@@ -512,6 +514,7 @@ class CubigDPGenerator():
             samples=samples,
             folder=self.folder,
             plot_samples=False,
-            save_npz=True,)
-        return f'{self.folder}/_samples.npz'
+            save_npz=True,
+            prefix=self.name)
+        return f'{self.folder}/{self.name}_samples.npz'
 

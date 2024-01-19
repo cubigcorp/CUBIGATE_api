@@ -6,11 +6,9 @@ import torch
 from cubigate.dp.utils.round import round_to_uint8
 
 def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, prefix: str=''):
-    print("###########################################################")
     if not os.path.exists(folder):
         os.makedirs(folder)
     if save_npz:
-        print("PATH: " + str(os.path.join(folder, f'{prefix}_samples.npz')))
         np.savez(
             os.path.join(folder, f'{prefix}_samples.npz'),
             samples=samples)
