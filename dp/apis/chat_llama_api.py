@@ -136,7 +136,7 @@ class ChatLlama2API(API):
         return np.concatenate(texts, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, candidate=True, demo_samples: Optional[np.ndarray]=None, sample_weight: float = 1.0):
+                        num_variations_per_sample, size, variation_degree, t=None, candidate=True, demo_samples: Optional[np.ndarray]=None, demo_weights: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         variations = []
         for _ in tqdm(range(num_variations_per_sample)):
             sub_variations = self._variation(

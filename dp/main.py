@@ -652,6 +652,7 @@ def main():
         assert samples.shape[0] % private_num_classes == 0
         num_samples_per_class = samples.shape[0] // private_num_classes
         variation_degree_t = degree_scheduler.step() if args.use_degree_scheduler else args.variation_degree_schedule[t]
+        wandb.log({"variation_degree":variation_degree_t, "t": t})
         if args.num_candidate == 0:
             packed_samples = np.expand_dims(samples, axis=1)
         else:
@@ -689,17 +690,15 @@ def main():
                         num_samples_per_class * class_i:
                         num_samples_per_class * (class_i + 1)]
                     sub_count[sub_losers] = 0
-                    
                     # Sort counts
                     sub_counts_sorted_idx = np.flip(np.argsort(sub_count))
+                    # Only superior samples as demonstration
                     sub_counts_idx = np.tile(sub_counts_sorted_idx, (len(sub_counts_sorted_idx), 1))
                     sub_row_idx, sub_col_idx = np.indices(sub_counts_idx.shape)
-                    # Only superior samples as demonstration
-                    sub_counts_idx[(sub_col_idx > sub_row_idx) | (sub_col_idx == sub_row_idx)] = -1
+                    sub_counts_idx[sub_col_idx >= sub_row_idx] = -1
                     sub_p = np.array([sub_count[idx] if idx >= 0 else 0 for idx in sub_counts_idx.flat]).reshape((args.num_samples, args.num_samples))
                     with np.errstate(divide='ignore', invalid='ignore'):
                         sub_p = np.nan_to_num(sub_p / np.sum(sub_p, axis=1).reshape((-1, 1)))
-
                     # Sampling demonstrations' index
                     num_demo = [args.demonstration if idx >= args.demonstration else idx for idx in range(len(sub_count))]
                     sub_indices = [
@@ -724,6 +723,7 @@ def main():
                 demo_samples  = demo_weights = None
             logging.info('Running sample variation')
             sample_weight_t = weight_scheduler.step() if args.use_weight_scheduler else args.sample_weight
+            wandb.log({"sample_weight": sample_weight_t, "t": t})
             packed_samples =api.variation(
                 samples=samples,
                 additional_info=additional_info,

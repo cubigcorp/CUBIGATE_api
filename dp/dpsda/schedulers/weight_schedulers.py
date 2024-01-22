@@ -87,7 +87,7 @@ class LinearWeight(Scheduler):
         self._min = weight_scheduler_min_w
 
     def _get_next(self) -> float:
-        test = self._last + self._step_size
+        test = self._last - self._step_size
         return test if test >= 0 else 0
 
 
