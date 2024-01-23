@@ -5,6 +5,7 @@ from collections import Counter
 from typing import Dict, Optional
 import torch
 from dpsda.agm import get_sigma
+from dpsda.data_logger import plot_count
 
 def revival(counts: np.ndarray, counts_1st_idx: np.ndarray, loser_filter: np.ndarray, synthetic_features: np.ndarray, num_candidate: int, index: faiss.Index):
     logging.info("Losers' revival started")
@@ -78,19 +79,20 @@ def get_count_stack(private_features: np.ndarray, synthetic_features: np.ndarray
     return counts
 
 
-def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0) -> np.ndarray:
-    if epsilon is not None:
+def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0, dir: str = '', step: int = 0) -> np.ndarray:
+    if epsilon > 0 :
         sigma = get_sigma(epsilon=epsilon, delta=delta, GS=1)
         logging.info(f'calculated sigma: {sigma}')
-        counts += (rng.normal(scale=sigma, size=len(counts))) * np.sqrt(num_nearest_neighbor)
+        noisy = counts + (rng.normal(scale=sigma, size=len(counts))) * np.sqrt(num_nearest_neighbor)
     else:
-        counts += (rng.normal(size=len(counts)) * np.sqrt(num_nearest_neighbor)
+        noisy = counts + (rng.normal(size=len(counts)) * np.sqrt(num_nearest_neighbor)
                 * noise_multiplier)
 
+    plot_count(counts, noisy, dir, step)
     if num_candidate > 0 :
-        counts = counts.reshape((-1, num_candidate))
+        noisy = noisy.reshape((-1, num_candidate))
 
-    return counts
+    return noisy
 
 
 def sanity_check(counts: np.ndarray) -> bool:
@@ -113,7 +115,7 @@ def diversity_check(losers: np.ndarray, diversity: float, num_samples: int, dive
 def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray, epsilon: float, delta: float,
                     noise_multiplier: float, rng: np.random.Generator, num_nearest_neighbor: int, mode: str,
                     threshold: float, num_candidate: int, diversity: float, diversity_lower_bound: float = 0.0,
-                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1, device: int = 0):
+                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1, device: int = 0, dir: str = None, step: int = None):
     # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
@@ -140,10 +142,10 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     logging.info(f'Number of samples in index: {index.ntotal}')
 
     _, ids = index.search(private_features, k=num_nearest_neighbor)
-    counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)
+    counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)  #(Nsyn * candidate)
     clean_count = counts.copy()
-    if epsilon > 0:
-        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate)
+    if epsilon > 0 or noise_multiplier > 0:
+        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate, dir, step)
     logging.info(f'Noisy count sum: {np.sum(counts)}')
     logging.info(f'Noisy count num>0: {np.sum(counts > 0)}')
     logging.info(f'Largest noisy counters: {np.flip(np.sort(counts.flatten()))[:50]}')

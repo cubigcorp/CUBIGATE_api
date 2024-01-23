@@ -125,6 +125,11 @@ def parse_args():
         help="Folder for public data if any"
     )
     parser.add_argument(
+        '--epsilon_delta_dp',
+        type=str2bool,
+        default=True
+    )
+    parser.add_argument(
         '--epsilon',
         type=float,
         default=0.0,
@@ -360,6 +365,8 @@ def parse_args():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, other_args = parser.parse_known_args()
+    if args.epsilon_delta_dp:
+        args.delta = 1 / args.num_samples
     if args.use_degree_scheduler or args.use_weight_scheduler:
         api_args, scheduler_args = split_args(other_args)
         if not args.use_degree_scheduler:  # weight scheduler only
@@ -473,6 +480,21 @@ def wandb_logging(private_labels: List, diversity: List, first_vote_only: List, 
 
 def main():
     args, api, degree_scheduler, weight_scheduler = parse_args()
+    config = dict(vars(args), **vars(api.args))
+    if args.use_degree_scheduler:
+        config.update(**vars(degree_scheduler.args))
+    if args.use_weight_scheduler:
+        config.update(**vars(weight_scheduler.args))
+    wandb.init(
+        entity='cubig_ai',
+        project="AZOO",
+        config=config,
+        notes=args.wandb_log_notes,
+        tags=args.wandb_log_tags,
+        dir=args.wandb_log_dir,
+        id=args.wandb_resume_id
+    )
+    args.result_folder = f'{args.result_folder}/{wandb.run.name}'
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     log_file = os.path.join(args.result_folder, 'log.log')
@@ -492,18 +514,7 @@ def main():
         
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
-    config = dict(vars(args), **vars(api.args))
-    if args.use_degree_scheduler:
-        config.update(**vars(degree_scheduler.args))
-    wandb.init(
-        entity='cubig_ai',
-        project="AZOO",
-        config=config,
-        notes=args.wandb_log_notes,
-        tags=args.wandb_log_tags,
-        dir=args.wandb_log_dir,
-        id=args.wandb_resume_id
-    )
+    
 
     metric = "FID" if args.num_private_samples > 2048 else "KID"
     rng = np.random.default_rng(args.random_seed)
@@ -556,7 +567,6 @@ def main():
             model_name=args.fid_model_name,
             batch_size=args.fid_batch_size,
             modality=args.modality,
-            device=f'cuda:{args.device}',
             metric=metric)
 
     num_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
@@ -635,7 +645,6 @@ def main():
             model_name=args.fid_model_name,
             batch_size=args.fid_batch_size,
             modality=args.modality,
-            device=f'cuda:{args.device}',
             metric=metric)
         logging.info(f'{metric}={fid}')
         log_fid(args.result_folder, fid, 0)
@@ -805,7 +814,9 @@ def main():
                     diversity_lower_bound=args.diversity_lower_bound,
                     loser_lower_bound=args.loser_lower_bound,
                     first_vote_only=first_vote_only[class_i],
-                    device=args.device)
+                    device=args.device,
+                    dir=args.result_folder,
+                    step = t)
                 if first_vote_only[class_i]:
                     accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
                     updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
@@ -813,8 +824,6 @@ def main():
                     diversity[class_i] = updated_div
                     first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
                     wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], t, accum_loser.T.tolist())
-                # if t < 8:
-                #     first_vote_only[class_i] = True
             else:
                 sub_count, sub_losers, sub_1st_idx = nn_histogram(
                     synthetic_features=packed_features[

@@ -2,6 +2,8 @@ import os
 import imageio
 import numpy as np
 from typing import Optional
+import matplotlib.pyplot as plt
+import wandb
 
 def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, save_npz=True, additional_info=None, prefix: str=''):
     if not os.path.exists(folder):
@@ -27,3 +29,18 @@ def log_count(count: np.ndarray, clean_count: Optional[np.ndarray], loser_filter
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     np.savez(path, count=count, clean_count=clean_count, losers = loser_filter)
+
+
+def plot_count(clean: np.ndarray, noisy: np.ndarray, dir: str, step: int):
+    x = np.arange(len(clean))
+    fig = plt.figure(facecolor='white')
+    plt.scatter(x, clean, c='blue', marker='o', label='Clean')
+    plt.scatter(x, noisy, c='red', marker='*', label='Noisy')
+    plt.xlabel('Sample Index')
+    plt.ylabel('Count')
+    plt.title(f'Comparison of Clean and Noisy Count at step {step}')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(dir, f"{step}_count.png"))
+    wandb.log({'count' : wandb.Image(fig), 't': step})
+    plt.close()
