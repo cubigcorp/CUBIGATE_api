@@ -5,10 +5,19 @@ import numpy as np
 from tqdm import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers import StableDiffusionImg2ImgPipeline
+from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
+from typing import Optional
 
 from .api import API
 from dpsda.pytorch_utils import dev
 
+
+import gc
+torch.cuda.empty_cache()
+gc.collect()
+
+
+#"Second Pair of Eyes,EasyNegative,cartoon,3d,disfigured,bad art,ugly,monstrous,repulsive,grotesque,deformed,poorly drawn,boring,sketch,bad hands,broken hands,((deformed hands)),((missing hands)),((extra hands)),((bad fingers)),((broken fingers)),((deformed fingers)),((missing fingers)),((extra fingers)),bad arms,broken arms,deformed arms,((missing arms)),((extra arms)),(bad-hands-5),(anime_badhandv4),(verybadimagenegative_v1.3),animatic"
 
 def _round_to_uint8(image):
     return np.around(np.clip(image * 255, a_min=0, a_max=255)).astype(np.uint8)
@@ -23,34 +32,41 @@ class StableDiffusionAPI(API):
                  variation_guidance_scale,
                  variation_num_inference_steps,
                  variation_batch_size,
+                 api_device,
                  lora,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
+        torch.cuda.empty_cache()
         self._random_sampling_checkpoint = random_sampling_checkpoint
         self._random_sampling_guidance_scale = random_sampling_guidance_scale
         self._random_sampling_num_inference_steps = \
             random_sampling_num_inference_steps
         self._random_sampling_batch_size = random_sampling_batch_size
-        self._random_sampling_pipe = StableDiffusionPipeline.from_pretrained(
+        self._random_sampling_pipe =  AutoPipelineForText2Image.from_pretrained(
             self._random_sampling_checkpoint, torch_dtype=torch.float16)
         if lora is not None:
             self._random_sampling_pipe.unet.load_attn_procs(lora)
         self._random_sampling_pipe.safety_checker = None
-        self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
+        self.device = f"cuda:{api_device}"
+        self._random_sampling_pipe = self._random_sampling_pipe.to(self.device)
 
         self._variation_checkpoint = variation_checkpoint
         self._variation_guidance_scale = variation_guidance_scale
         self._variation_num_inference_steps = variation_num_inference_steps
         self._variation_batch_size = variation_batch_size
 
-        self._variation_pipe = \
-            StableDiffusionImg2ImgPipeline.from_pretrained(
-                self._variation_checkpoint,
-                torch_dtype=torch.float16)
+        if self._variation_checkpoint == self._random_sampling_checkpoint:
+            # 동일한 checkpoint일 경우 재활용으로 메모리 절약
+            self._variation_pipe = AutoPipelineForImage2Image.from_pipe(self._random_sampling_pipe)
+        else:
+            self._variation_pipe = \
+                    AutoPipelineForImage2Image.from_pretrained(
+                        self._variation_checkpoint,
+                        torch_dtype=torch.float16, )
         self._variation_pipe.safety_checker = None
         if lora is not None:
             self._variation_pipe.unet.load_attn_procs(lora)
-        self._variation_pipe = self._variation_pipe.to(dev())
+        self._variation_pipe = self._variation_pipe.to(self.device)
 
     @staticmethod
     def command_line_parser():
@@ -63,6 +79,11 @@ class StableDiffusionAPI(API):
             help="LoRA"
         )
         parser.add_argument(
+            '--api_device',
+            type=int,
+            required=True
+        )
+        parser.add_argument(
             '--random_sampling_checkpoint',
             type=str,
             required=True,
@@ -70,7 +91,7 @@ class StableDiffusionAPI(API):
         parser.add_argument(
             '--random_sampling_guidance_scale',
             type=float,
-            default=7.5,
+            default=0,
             help='The guidance scale for random sampling API')
         parser.add_argument(
             '--random_sampling_num_inference_steps',
@@ -144,6 +165,7 @@ class StableDiffusionAPI(API):
                     num_samples_for_prompt - iteration * max_batch_size)
                 images.append(_round_to_uint8(self._random_sampling_pipe(
                     prompt=prompt,
+                    #negative_prompts=negative_prompts,
                     width=width,
                     height=height,
                     num_inference_steps=(
@@ -155,7 +177,7 @@ class StableDiffusionAPI(API):
         return np.concatenate(images, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None):
+                        num_variations_per_sample, size, variation_degree, t=None, candidate=False, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight=None):
         """
         Generates a specified number of variations for each image in the input
         array using OpenAI's Image Variation API.
@@ -210,6 +232,7 @@ class StableDiffusionAPI(API):
         samples = [variation_transform(Image.fromarray(im))
                   for im in samples]
         samples = torch.stack(samples).to(self.device)
+        print(samples.shape)
         max_batch_size = self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
@@ -218,6 +241,8 @@ class StableDiffusionAPI(API):
             variations.append(self._variation_pipe(
                 prompt=prompts[iteration * max_batch_size:
                                (iteration + 1) * max_batch_size],
+                # negative_prompts=negative_prompts[iteration * max_batch_size:
+                #                (iteration + 1) * max_batch_size],
                 image=samples[iteration * max_batch_size:
                              (iteration + 1) * max_batch_size],
                 num_inference_steps=self._variation_num_inference_steps,
