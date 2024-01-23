@@ -305,7 +305,7 @@ class ChatGPTAPI(API):
             samples=samples,
             additional_info=additional_info,
             folder=self._result_folder,
-            plot_samples=False,
+            save_each_sample=False,
             save_npz=True,
             prefix=prefix)
 

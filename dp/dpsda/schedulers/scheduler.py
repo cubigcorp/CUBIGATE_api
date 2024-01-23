@@ -53,6 +53,12 @@ class Scheduler(ABC):
         pass
 
 
+
+    def set_from_t(self, t: int) -> None:
+        while self._step_count < t:
+            self.step()
+
+
     def step(self) -> float:
         self._step_count += 1
         if self._step_count > self. _T:

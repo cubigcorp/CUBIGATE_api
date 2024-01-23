@@ -80,7 +80,7 @@ class CubigDPGenerator():
         epsilon: float,
         delta: float,
         count_threshold: int, # to remove
-        plot_images: bool=False,
+        save_each_sample: bool=False,
         nn_mode: str='L2'): # to remove
         """
         Learn the distribution
@@ -113,7 +113,7 @@ class CubigDPGenerator():
             Privacy parameter
         count_threshold:
             Threshold for DP NN histogram
-        plot_images:
+        save_each_sample:
             Whether to save generated images in PNG files
         nn_mode:
             Which distance metric to use in DP NN histogram
@@ -165,7 +165,7 @@ class CubigDPGenerator():
                 samples=samples,
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/{0}',
-                plot_samples=plot_images)
+                save_each_sample=save_each_sample)
             if checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step')
             start_t = 1
@@ -284,7 +284,7 @@ class CubigDPGenerator():
                 samples=samples,
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/{t}',
-                plot_samples=plot_images)
+                save_each_sample=save_each_sample)
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
 
 
@@ -294,7 +294,7 @@ class CubigDPGenerator():
         img_size: str,
         num_samples: int,
         variation_degree: float, # to remove
-        plot_images: bool,
+        save_each_sample: bool,
         api_args: Optional[List]
     ):
         """
@@ -310,7 +310,7 @@ class CubigDPGenerator():
             Number of samples to generate
         variation_degree:
             Variation degree
-        plot_images:
+        save_each_sample:
             Whether to save generated images in PNG files
         """
         # 1. Make sure it has API instance
@@ -339,4 +339,4 @@ class CubigDPGenerator():
                 samples=samples,
                 additional_info=additional_info,
                 folder=f'{self.result_folder}/gen',
-                plot_samples=plot_images)
+                save_each_sample=save_each_sample)

@@ -31,7 +31,7 @@ def argument():
         choices=['DALLE', 'stable_diffusion', 'improved_diffusion'],
         help='Which foundation model API to use')
     parser.add_argument(
-        '--plot_images',
+        '--save_each_sample',
         type=str2bool,
         default=True,
         help='Whether to save generated images in PNG files') 
@@ -177,7 +177,7 @@ def main():
             epsilon=args.epsilon,
             delta=args.delta,
             count_threshold=args.count_threshold,
-            plot_images=args.plot_images,
+            save_each_sample=args.save_each_sample,
             nn_mode=args.nn_mode,
             api_args=api_args
         )
@@ -188,7 +188,7 @@ def main():
             img_size=args.img_size,
             num_samples=args.num_samples,
             variation_degree=args.variation_degree,
-            plot_images=args.plot_images,
+            save_each_sample=args.save_each_sample,
             api_args=api_args
         )
 

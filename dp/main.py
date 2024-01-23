@@ -68,22 +68,29 @@ def parse_args():
         default=None,
         help="Wandb run ID to resume"
     )
-    parser.add_argument(
-        '--diversity_lower_bound',
-        type=float,
-        default=0.5,
-        help="Lower bound for diversity as the ratio of samples who are winners"
-    )
-    parser.add_argument(
-        '--loser_lower_bound',
-        type=float,
-        default=0.0
-    )
-    parser.add_argument(
+    privacy = parser.add_argument_group('Privacy parameters')
+    privacy.add_argument(
         '--dp',
         type=str2bool,
-        default=True
+        default=True,
+        help="Whether to apply differential privacy"
     )
+    privacy.add_argument(
+        '--epsilon_delta_dp',
+        type=str2bool,
+        default=True,
+        help="Whther to apply (eps, del)-DP"
+    )
+    privacy.add_argument(
+        '--epsilon',
+        type=float,
+        default=0.0,
+        required=False)
+    privacy.add_argument(
+        '--delta',
+        default=0.0,
+        type=float,
+        required=False)
     parser.add_argument(
         '--random_seed',
         type=int,
@@ -124,103 +131,93 @@ def parse_args():
         default='',
         help="Folder for public data if any"
     )
-    parser.add_argument(
-        '--epsilon_delta_dp',
-        type=str2bool,
-        default=True
-    )
-    parser.add_argument(
-        '--epsilon',
-        type=float,
-        default=0.0,
-        required=False)
-    parser.add_argument(
-        '--delta',
-        default=0.0,
-        type=float,
-        required=False)
-    parser.add_argument(
-        '--device',
-        type=int,
-        default=0)
-    parser.add_argument(
-        '--save_samples_live',
-        action='store_true')
-    parser.add_argument(
-        '--save_samples_live_freq',
-        type=int,
-        required=False,
-        default=np.inf,
-        help="Live saving Frequency")
-    parser.add_argument(
-        '--live_loading_target',
-        type=str,
-        required=False)
     ours_group.add_argument(
         '--demonstration',
         type=int,
         required=False,
         default=0)
-    parser.add_argument(
+    
+    general = parser.add_argument_group("Generaal")
+    general.add_argument(
+        '--device',
+        type=int,
+        default=0)
+    general.add_argument(
+        '--save_samples_live',
+        action='store_true')
+    general.add_argument(
+        '--save_samples_live_freq',
+        type=int,
+        required=False,
+        default=np.inf,
+        help="Live saving Frequency")
+    general.add_argument(
+        '--live_loading_target',
+        type=str,
+        required=False)
+    
+    general.add_argument(
         '--modality',
         type=str,
         choices=['image', 'text', 'time-series', "tabular"], 
         default='toy')
-    parser.add_argument(
+    general.add_argument(
         '--api',
         type=str,
         required=True,
         choices=['DALLE', 'stable_diffusion', 'improved_diffusion', 'chatgpt', 'llama2', 'chat_llama2', 'toy', 'noapi'], 
         help='Which foundation model API to use')
-    parser.add_argument(
-        '--plot_images',
+
+    general.add_argument(
+        '--save_each_sample',
         type=str2bool,
         default=True,
         help='Whether to save generated images in PNG files')  #False
-    parser.add_argument(
+    general.add_argument(
         '--data_checkpoint_path',
         type=str,
         default="",
         help='Path to the data checkpoint')
-    parser.add_argument(
+    general.add_argument(
         '--count_checkpoint_path',
         type=str,
         default="",
         help="Path to the count checkpoint"
     )
-    parser.add_argument(
+    general.add_argument(
         '--data_checkpoint_step',
         type=int,
         default=-1,
         help='Iteration of the data checkpoint')
-    parser.add_argument(
+    general.add_argument(
         '--num_samples_schedule',
         type=str,
         default='50000,'*9 + '50000',
         help='Number of samples to generate at each iteration')
-    parser.add_argument(
+    general.add_argument(
         '--num_samples',
         type=int,
         default=0
     )
-    parser.add_argument(
+    general.add_argument(
         '--T',
         type=int,
         default=0
     )
-    parser.add_argument(
+    general.add_argument(
         '--variation_degree_schedule',
         type=str,
         default='0,'*9 + '0',
         help='Variation degree at each iteration')
-    parser.add_argument(
+    general.add_argument(
         '--use_degree_scheduler',
-        type=str2bool
+        type=str2bool,
+        default=True
     )
-    parser.add_argument(
+    general.add_argument(
         '--variation_degree_scheduler',
         type=str,
-        default='linear',
+        default='constant',
         choices=['step', 'exponential', 'linear', 'constant'],
         help='Variation degree scheduler')
     parser.add_argument(
@@ -382,8 +379,6 @@ def parse_args():
         int, args.num_samples_schedule.split(',')))
     if args.direct_variate:
         assert len(set(args.num_samples_schedule)) == 1, "Number of samples should remain same during the variations"
-    # if args.loser_lower_bound == 0:
-    #     args.loser_lower_bound = 1 / args.num_candidate
     variation_degree_type = (float if '.' in args.variation_degree_schedule
                              else int)
     args.variation_degree_schedule = list(map(
@@ -462,20 +457,6 @@ def log_fid(folder, fid, t):
     with open(os.path.join(folder, 'fid.csv'), 'a') as f:
         f.write(f'{t} {fid}\n')
 
-
-def wandb_logging(private_labels: List, diversity: List, first_vote_only: List, t: int, losers: List=None):
-    if len(private_labels) > 1:
-        # diversity logging
-        wandb.Table.MAX_ROWS = len(diversity)
-        div_table = wandb.Table(columns=private_labels, data=diversity)
-        vote_table = wandb.Table(columns=private_labels, data=first_vote_only)
-        wandb.log({"diversity": div_table, "fist_vote_only": vote_table, "t": t})
-    else:
-        wandb.log({"diversity": diversity[0][0], "first_vote_only": first_vote_only[0][0], "t":t})
-
-    if losers is not None:
-        loser_table = wandb.Table(columns=private_labels, data=losers)
-        wandb.log({"has_lost": loser_table, "t": t})
 
 
 def main():
@@ -579,17 +560,16 @@ def main():
         samples, additional_info = load_samples(args.data_checkpoint_path)
         if args.direct_variate:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
-            (count, accum_loser) = load_count(args.count_checkpoint_path)
+            (count, losers) = load_count(args.count_checkpoint_path)
             assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
-            diversity = 1 - np.sum(accum_loser, axis=1) / num_samples_per_class
-            first_vote_only = diversity > args.diversity_lower_bound
         if args.data_checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
+        if args.use_weight_scheduler:
+            weight_scheduler.set_from_t(args.data_checkpoint_step)
+        if args.use_degree_scheduler:
+            degree_scheduler.set_from_t(args.data_checkpoint_step)
         start_t = args.data_checkpoint_step + 1
     else:
-        accum_loser = np.full((private_num_classes, num_samples), False)
-        diversity = np.full((private_num_classes), 1.0)
-        first_vote_only = np.full((private_num_classes), True)
         if args.use_public_data:
             logging.info(f'Using public data in {args.public_data_folder} as initial samples')
             samples, additional_info = load_public_data(
@@ -611,13 +591,11 @@ def main():
                     samples=samples,
                     additional_info=additional_info,
                     folder=f'{args.result_folder}/{0}',
-                    plot_samples=args.plot_images,
+                    save_each_sample=args.save_each_sample,
                     modality=args.modality)
             if args.data_checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step'),
             start_t = 1
-        if args.direct_variate:
-            wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], 0, accum_loser.T.tolist())
 
         if args.experimental:
             log_plot(private_samples=all_private_samples,
@@ -695,7 +673,7 @@ def main():
                     sub_count = count[
                         num_samples_per_class * class_i:
                         num_samples_per_class * (class_i + 1)]
-                    sub_losers = accum_loser[class_i, 
+                    sub_losers = losers[
                         num_samples_per_class * class_i:
                         num_samples_per_class * (class_i + 1)]
                     sub_count[sub_losers] = 0
@@ -785,6 +763,7 @@ def main():
             packed_features = np.mean(packed_features, axis=1)
 
         logging.info('Computing histogram')
+        losers = []
         count = []
         count_1st_idx = []
         if args.direct_variate:
@@ -795,8 +774,7 @@ def main():
             num_samples_per_class_w_candidate = num_samples_per_class
         for class_i, class_ in enumerate(private_classes):
             if args.dp:
-                logging.info(f"Current diversity: {diversity[class_i]}")
-                sub_count, sub_clean_count, sub_losers, sub_1st_idx = dp_nn_histogram(
+                sub_count, sub_losers, sub_1st_idx = dp_nn_histogram(
                     synthetic_features=packed_features[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
@@ -810,20 +788,9 @@ def main():
                     threshold=args.count_threshold,
                     num_candidate=num_candidate,
                     rng=rng,
-                    diversity=diversity[class_i],
-                    diversity_lower_bound=args.diversity_lower_bound,
-                    loser_lower_bound=args.loser_lower_bound,
-                    first_vote_only=first_vote_only[class_i],
                     device=args.device,
                     dir=args.result_folder,
                     step = t)
-                if first_vote_only[class_i]:
-                    accum_loser[class_i] = np.logical_or(accum_loser[class_i], np.any(sub_losers, axis=1, keepdims=True).flatten())
-                    updated_div = 1 - accum_loser[class_i].sum() / num_samples_per_class
-                    logging.info(f"Diversity loss: {diversity[class_i] - updated_div}")
-                    diversity[class_i] = updated_div
-                    first_vote_only[class_i] = diversity[class_i] > args.diversity_lower_bound
-                    wandb_logging(private_classes, [diversity.tolist()], [first_vote_only.tolist()], t, accum_loser.T.tolist())
             else:
                 sub_count, sub_losers, sub_1st_idx = nn_histogram(
                     synthetic_features=packed_features[
@@ -835,14 +802,10 @@ def main():
                     num_candidate=num_candidate,
                     device=args.device
                 )
-                sub_clean_count = sub_count.copy()
-            log_count(
-                sub_count,
-                sub_clean_count,
-                None,
-                f'{args.result_folder}/{t}/count_class{class_}.npz')
+            losers.append(sub_losers)
             count.append(sub_count)
             count_1st_idx.append(sub_1st_idx)
+        losers = np.concatenate(losers)
         count = np.concatenate(count)
         count_1st_idx = np.concatenate(count_1st_idx)
         if args.modality == 'image':
@@ -868,34 +831,13 @@ def main():
             new_num_samples_per_class = num_samples_per_class
 
         if args.direct_variate:
-            selected = []
-            for class_i in private_classes:
-                class_indices = np.arange(num_samples_per_class * class_i, num_samples_per_class * (class_i + 1))
-                sub_count = count[class_indices]
-                for i in range(sub_count.shape[0]):
-                    # loser
-                    # 패자부할전을 할 경우에 이 단계에서 loser로 분류되는 샘플은 없으므로 첫 번째 투표만 하는 경우에만 해당
-                    if sub_count[i] == 0:
-                        idx = rng.choice(
-                            np.arange(num_samples_per_class),
-                            size=1,
-                            p=sub_count / np.sum(sub_count)
-                        )[0]
-                        logging.info(f"Winner selected in place of loser at {i}: {idx}")
-                        idx = [class_indices[idx], count_1st_idx[class_indices[idx]]]
-                    # winner
-                    else:
-                        idx = [class_indices[i], count_1st_idx[class_indices[i]]]
-                    selected.append(idx)
-            selected = np.stack(selected)
-            new_new_samples = packed_samples[selected[:, 0], selected[:, 1]]
+            logging.info(f"Selected candidates: {count_1st_idx}")
+            new_new_samples = packed_samples[np.arange(args.num_samples), count_1st_idx]
             new_new_additional_info = additional_info
-            new_new_count = count[selected[:,0]]
-            count = new_new_count
             log_count(
                 count,
                 None,
-                accum_loser,
+                losers,
                 f'{args.result_folder}/{t}/count.npz')
         else:
             new_indices = []
@@ -959,13 +901,13 @@ def main():
                      step=t,
                      dir=args.result_folder)
     
-        else:
-            log_samples(
-                samples=samples,
-                additional_info=additional_info,
-                folder=f'{args.result_folder}/{t}',
-                plot_samples=args.plot_images,
-                modality=args.modality)
+        
+        log_samples(
+            samples=samples,
+            additional_info=additional_info,
+            folder=f'{args.result_folder}/{t}',
+            save_each_sample=args.save_each_sample,
+            modality=args.modality)
         if args.dp:
             eps = get_epsilon(args.epsilon, t)
             logging.info(f"Privacy cost so far: {eps:.2f}")

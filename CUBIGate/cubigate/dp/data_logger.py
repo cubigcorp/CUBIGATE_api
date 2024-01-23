@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from cubigate.dp.utils.round import round_to_uint8
 
-def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, additional_info=None, prefix: str=''):
+def log_samples(samples, folder: str, save_each_sample: bool, save_npz=True, additional_info=None, prefix: str=''):
     if not os.path.exists(folder):
         os.makedirs(folder)
     if save_npz:
@@ -13,7 +13,7 @@ def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, additio
             os.path.join(folder, f'{prefix}_samples.npz'),
             samples=samples,
             additional_info=additional_info)
-    if plot_samples:
+    if save_each_sample:
         for i in range(samples.shape[0]):
             imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
 

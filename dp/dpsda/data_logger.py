@@ -5,7 +5,7 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import wandb
 
-def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, save_npz=True, additional_info=None, prefix: str=''):
+def log_samples(samples, folder: str, save_each_sample: bool, modality: str=None, save_npz=True, additional_info=None, prefix: str=''):
     if not os.path.exists(folder):
         os.makedirs(folder)
     if save_npz:
@@ -13,7 +13,7 @@ def log_samples(samples, folder: str, plot_samples: bool, modality: str=None, sa
             os.path.join(folder, f'{prefix}_samples.npz'),
             samples=samples,
             additional_info=additional_info)
-    if plot_samples:
+    if save_each_sample:
         for i in range(samples.shape[0]):
             if modality == 'image':
                 imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
