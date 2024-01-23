@@ -2,9 +2,17 @@ from cubigate.generate import CubigDPGenerator
 from cubigate.dp.utils.arg_utils import str2bool
 import argparse
 import os
+import logging
+from utils.mq_connector import MqConnector
+from utils.db_connector import DBConnector
+import pika
+import sys
+import json
+import requests
 
 #fixed values for display
 generator = CubigDPGenerator()
+db_connector = DBConnector()
 
 #Just train the model to make DP-synthetic data
 def train_data_generation_model(iterations=2, epsilon=1, delta=0):
@@ -53,5 +61,107 @@ def select_measured(measured: str, variated: str) -> str:
 
 
 
-path = train_data_generation_model()
-t = generate_dp_data(base_data=path)
+def on_message_callback_train(ch, method, properties, body):
+    try:
+        print(f" [x] Received {body.decode()}")
+        data = body.decode()
+        data=json.loads(data)
+        job_id = data['job_id']
+        
+        # Get callback URL
+        callback_url = db_connector.execute_query('service_request_get_callback_url', params=[job_id], fetch_all=False)
+        logging.info(f"Job id: {job_id} - Callback URL: {callback_url}")
+        
+        empty_json_str = json.dumps({})
+        
+        # Update job status to executing
+        db_connector.execute_query('service_request_update', params=[job_id, 'EXECUTING', empty_json_str, ''], fetch_all=False)
+        
+        
+        result_file_path = train_data_generation_model(data['iterations'], data['epsilon'], data['delta'])
+        
+        result = {"job_id": job_id, "result": {"file_path": result_file_path}}
+        # send result to callback url
+        requests.post(callback_url, json=result)
+        
+        logging.info(f"Result file path: {result_file_path}")
+        logging.info(f" [x] Done")
+        
+        result_str = json.dumps(result)
+        # Update job status to success
+        db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+    except Exception as e:
+        logging.error(f"Error: {str(e)}")
+        # Update job status to error
+        db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
+    finally:
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+
+def on_message_callback_generate(ch, method, properties, body):
+    try:
+        print(f" [x] Received {body.decode()}")
+        data = body.decode()
+        data=json.loads(data)
+        job_id = data['job_id']
+        
+        empty_json_str = json.dumps({})
+        
+        # Get callback URL
+        callback_url = db_connector.execute_query('service_request_get_callback_url', params=[job_id], fetch_all=False)
+        logging.info(f"Job id: {job_id} - Callback URL: {callback_url}")
+        
+        # Update job status to executing
+        db_connector.execute_query('service_request_update', params=[job_id, 'EXECUTING', empty_json_str, ''], fetch_all=False)
+        
+        file_name = generate_dp_data(data['checkpoint_path']).filename
+        
+        result = {"job_id": job_id, "result": {"file_path": file_name}}
+        # send result to callback url
+        requests.post(callback_url, json=result)
+        
+        logging.info(f"Result file path: {file_name}")
+        logging.info(f" [x] Done")
+        
+        result_str = json.dumps(result)
+        # Update job status to success
+        db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+    except Exception as e:
+        logging.error(f"Error: {str(e)}")
+        # Update job status to error
+        db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
+    finally:
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+
+
+mode = sys.argv[1]
+if not mode or mode not in ['train', 'generate']:
+    print("Please specify mode: train or generate")
+    exit(1)
+
+while True:
+    if mode == 'train':
+        queue_name = 'dp_msv_train'
+    else:
+        queue_name = 'dp_msv_generate'
+    try:
+        logging.info(f" [*] Waiting for messages in queue: {queue_name}. To exit press CTRL+C")
+        mq_connector = MqConnector()
+        channel = mq_connector.channel
+        channel.queue_declare(queue=queue_name, durable=True)
+        channel.basic_qos(prefetch_count=1)
+        if queue_name == 'dp_msv_train':
+            channel.basic_consume(queue_name, on_message_callback_train)
+        else:
+            channel.basic_consume(queue_name, on_message_callback_generate)
+        channel.start_consuming()
+    # Don't recover if connection was closed by broker
+    except pika.exceptions.ConnectionClosedByBroker:
+        break
+    # Don't recover on channel errors
+    except pika.exceptions.AMQPChannelError:
+        break
+    # Recover on all other connection errors
+    except pika.exceptions.AMQPConnectionError:
+        continue

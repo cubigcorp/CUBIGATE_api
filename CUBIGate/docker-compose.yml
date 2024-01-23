@@ -2,7 +2,7 @@ version: '3.5'
 
 services:
   dp-msv:
-    image: dp_msv:lnb7c3vtnsexophm
+    image: curebigdata/dp_msv:v1.5
     deploy:
       resources:
         reservations:
@@ -17,4 +17,5 @@ services:
         target: /dev/shm
         tmpfs:
            size: 10000000000 # (this means 10GB)
+    command: conda run -n CUBIG python main.py train
 
