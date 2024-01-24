@@ -83,7 +83,7 @@
  ```
  --weight_scheduler linear --weight_scheduler_base 1.0 --weight_scheduler_min 0.9 --demonstration 3
  ```
- 1. 스케줄러 미사용
+ 2. 스케줄러 미사용
    * constant scheduler와 동일한 결과
  ```
  --use_weight_scheduler false --sample_weight 0.9 --demonstration 3
