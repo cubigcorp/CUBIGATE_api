@@ -31,11 +31,12 @@ def log_count(count: np.ndarray, clean_count: Optional[np.ndarray], loser_filter
     np.savez(path, count=count, clean_count=clean_count, losers = loser_filter)
 
 
-def plot_count(clean: np.ndarray, noisy: np.ndarray, dir: str, step: int):
+def plot_count(clean: np.ndarray, noisy: np.ndarray, dir: str, step: int, threshold: float):
     x = np.arange(len(clean))
     fig = plt.figure(facecolor='white')
     plt.scatter(x, clean, c='blue', marker='o', label='Clean')
     plt.scatter(x, noisy, c='red', marker='*', label='Noisy')
+    plt.axhline(y=threshold, color='green', linestyle='--', label='Threshold')
     plt.xlabel('Sample Index')
     plt.ylabel('Count')
     plt.title(f'Comparison of Clean and Noisy Count at step {step}')

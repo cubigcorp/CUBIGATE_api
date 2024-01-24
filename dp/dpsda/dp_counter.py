@@ -79,7 +79,7 @@ def get_count_stack(private_features: np.ndarray, synthetic_features: np.ndarray
     return counts
 
 
-def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0, dir: str = '', step: int = 0) -> np.ndarray:
+def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0, dir: str = '', step: int = 0, threshold: float = 0.0) -> np.ndarray:
     if epsilon > 0 :
         sigma = get_sigma(epsilon=epsilon, delta=delta, GS=1)
         logging.info(f'calculated sigma: {sigma}')
@@ -88,7 +88,7 @@ def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neig
         noisy = counts + (rng.normal(size=len(counts)) * np.sqrt(num_nearest_neighbor)
                 * noise_multiplier)
 
-    plot_count(counts, noisy, dir, step)
+    plot_count(counts, noisy, dir, step, threshold)
     if num_candidate > 0 :
         noisy = noisy.reshape((-1, num_candidate))
 
@@ -143,9 +143,8 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
 
     _, ids = index.search(private_features, k=num_nearest_neighbor)
     counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)  #(Nsyn * candidate)
-    clean_count = counts.copy()
     if epsilon > 0 or noise_multiplier > 0:
-        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate, dir, step)
+        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate, dir, step, threshold)
     logging.info(f'Noisy count sum: {np.sum(counts)}')
     logging.info(f'Noisy count num>0: {np.sum(counts > 0)}')
     logging.info(f'Largest noisy counters: {np.flip(np.sort(counts.flatten()))[:50]}')

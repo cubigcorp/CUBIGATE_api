@@ -6,20 +6,20 @@ import imageio
 import wandb
 from torchvision.utils import make_grid
 import torch
-from typing import List
+from tqdm.auto import tqdm
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
 from dpsda.metrics import make_fid_stats
 from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
-from dpsda.arg_utils import str2bool, split_args, split_schedulers_args
+from dpsda.arg_utils import str2bool, split_args, split_schedulers_args, slice_scheduler_args
 from apis import get_api_class_from_name
 from dpsda.data_logger import log_samples, log_count
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data, log_plot
-from dpsda.schedulers.scheduler import get_scheduler_class_from_name
+from dpsda.schedulers import get_scheduler_class_from_name
 
 
 
@@ -105,7 +105,8 @@ def parse_args():
     ours_group.add_argument(
         '--weight_scheduler',
         type=str,
-        default=""
+        default="constant",
+        choices=['step', 'exponential', 'linear', 'constant']
     )
     ours_group.add_argument(
         '--sample_weight',
@@ -215,7 +216,7 @@ def parse_args():
         default=True
     )
     general.add_argument(
-        '--variation_degree_scheduler',
+        '--degree_scheduler',
         type=str,
         default='constant',
         choices=['step', 'exponential', 'linear', 'constant'],
@@ -367,9 +368,9 @@ def parse_args():
     if args.use_degree_scheduler or args.use_weight_scheduler:
         api_args, scheduler_args = split_args(other_args)
         if not args.use_degree_scheduler:  # weight scheduler only
-            weight_args = scheduler_args
+            weight_args = slice_scheduler_args(scheduler_args)
         elif not args.use_weight_scheduler:  # degree scheduler only 
-            degree_args = scheduler_args
+            degree_args = slice_scheduler_args(scheduler_args)
         else:  # both
             weight_args, degree_args = split_schedulers_args(scheduler_args)
     else:
@@ -399,13 +400,13 @@ def parse_args():
     api_class = get_api_class_from_name(args.api)
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
     if args.use_degree_scheduler:
-        degree_scheduler_class = get_scheduler_class_from_name(args.variation_degree_scheduler, 'degree')
+        degree_scheduler_class = get_scheduler_class_from_name(args.degree_scheduler)
         degree_scheduler = degree_scheduler_class.from_command_line_args(args=degree_args, T=T)
     else:
         degree_scheduler =None
     if args.use_weight_scheduler:
         assert args.demonstration > 0
-        weight_scheduler_class = get_scheduler_class_from_name(args.weight_scheduler, 'weight')
+        weight_scheduler_class = get_scheduler_class_from_name(args.weight_scheduler)
         weight_scheduler = weight_scheduler_class.from_command_line_args(args=weight_args, T=T)
     else:
         weight_scheduler =None
@@ -558,7 +559,7 @@ def main():
         logging.info(
             f'Loading data checkpoint from {args.data_checkpoint_path}')
         samples, additional_info = load_samples(args.data_checkpoint_path)
-        if args.direct_variate:
+        if args.direct_variate and args.data_checkpoint_step > 1:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
             (count, losers) = load_count(args.count_checkpoint_path)
             assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
@@ -740,7 +741,7 @@ def main():
         packed_features = []
         logging.info('Running feature extraction')
 
-        for packed in packed_tokens:
+        for packed in tqdm(packed_tokens, "Extracting features from synthetic samples", unit="sample"):
             if args.experimental:
                 sub_packed_features = packed[:, :2]
             else:
@@ -752,7 +753,8 @@ def main():
                     batch_size=args.feature_extractor_batch_size,
                     device=f'cuda:{args.device}',
                     use_dataparallel=False,
-                    modality=args.modality)
+                    modality=args.modality,
+                    verbose=False)
 
             packed_features.append(sub_packed_features)
         if args.direct_variate:  # candidate로 생성한 variation을 사용할 경우
@@ -901,13 +903,13 @@ def main():
                      step=t,
                      dir=args.result_folder)
     
-        
-        log_samples(
-            samples=samples,
-            additional_info=additional_info,
-            folder=f'{args.result_folder}/{t}',
-            save_each_sample=args.save_each_sample,
-            modality=args.modality)
+        else:
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{args.result_folder}/{t}',
+                save_each_sample=args.save_each_sample,
+                modality=args.modality)
         if args.dp:
             eps = get_epsilon(args.epsilon, t)
             logging.info(f"Privacy cost so far: {eps:.2f}")

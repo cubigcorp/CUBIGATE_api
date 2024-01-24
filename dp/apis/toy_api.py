@@ -1,5 +1,5 @@
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from .api import API
 from dpsda.experiment import get_samples_out_bounding, get_bounding
 

@@ -7,7 +7,7 @@ from cleanfid.resize import make_resizer
 import torch
 import cleanfid
 from cleanfid.features import build_feature_extractor, get_reference_statistics
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 def round_to_uint8(image):
     return np.around(np.clip(image, a_min=0, a_max=255)).astype(np.uint8)

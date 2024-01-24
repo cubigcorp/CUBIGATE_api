@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from .api import API
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM
