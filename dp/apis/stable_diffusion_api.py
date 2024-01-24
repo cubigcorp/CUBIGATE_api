@@ -2,26 +2,17 @@ import torch
 import torchvision.transforms as T
 from PIL import Image
 import numpy as np
-from tqdm import tqdm
-from diffusers import StableDiffusionPipeline
-from diffusers import StableDiffusionImg2ImgPipeline
+from tqdm.auto import tqdm
 from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
-from typing import Optional
+from typing import Optional, Union
+import warnings
+warnings.filterwarnings("ignore", message=r"Passing", category=FutureWarning)
 
 from .api import API
 from dpsda.pytorch_utils import dev
 
-
-import gc
-torch.cuda.empty_cache()
-gc.collect()
-
-
-#"Second Pair of Eyes,EasyNegative,cartoon,3d,disfigured,bad art,ugly,monstrous,repulsive,grotesque,deformed,poorly drawn,boring,sketch,bad hands,broken hands,((deformed hands)),((missing hands)),((extra hands)),((bad fingers)),((broken fingers)),((deformed fingers)),((missing fingers)),((extra fingers)),bad arms,broken arms,deformed arms,((missing arms)),((extra arms)),(bad-hands-5),(anime_badhandv4),(verybadimagenegative_v1.3),animatic"
-
 def _round_to_uint8(image):
     return np.around(np.clip(image * 255, a_min=0, a_max=255)).astype(np.uint8)
-
 
 class StableDiffusionAPI(API):
     def __init__(self, random_sampling_checkpoint,
@@ -44,6 +35,7 @@ class StableDiffusionAPI(API):
         self._random_sampling_batch_size = random_sampling_batch_size
         self._random_sampling_pipe =  AutoPipelineForText2Image.from_pretrained(
             self._random_sampling_checkpoint, torch_dtype=torch.float16)
+        self._random_sampling_pipe.set_progress_bar_config(disable=True)
         if lora is not None:
             self._random_sampling_pipe.unet.load_attn_procs(lora)
         self._random_sampling_pipe.safety_checker = None
@@ -64,6 +56,7 @@ class StableDiffusionAPI(API):
                         self._variation_checkpoint,
                         torch_dtype=torch.float16, )
         self._variation_pipe.safety_checker = None
+        self._variation_pipe.set_progress_bar_config(disable=True)
         if lora is not None:
             self._variation_pipe.unet.load_attn_procs(lora)
         self._variation_pipe = self._variation_pipe.to(self.device)
@@ -159,7 +152,7 @@ class StableDiffusionAPI(API):
             num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
             num_iterations = int(np.ceil(
                 float(num_samples_for_prompt) / max_batch_size))
-            for iteration in tqdm(range(num_iterations)):
+            for iteration in tqdm(range(num_iterations), desc="Generating initial samples", unit="batch"):
                 batch_size = min(
                     max_batch_size,
                     num_samples_for_prompt - iteration * max_batch_size)
@@ -177,7 +170,7 @@ class StableDiffusionAPI(API):
         return np.concatenate(images, axis=0), np.array(return_prompts)
 
     def variation(self, samples, additional_info,
-                        num_variations_per_sample, size, variation_degree, t=None, candidate=False, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight=None):
+                        num_variations_per_sample, size, variation_degree: Union[np.ndarray, float], t: int = None, candidate: bool = False, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight=None):
         """
         Generates a specified number of variations for each image in the input
         array using OpenAI's Image Variation API.
@@ -207,10 +200,10 @@ class StableDiffusionAPI(API):
                 x width x height x channels] containing the generated image
                 variations as numpy arrays of type uint8.
         """
-        if not (0 <= variation_degree <= 1):
+        if np.any(0 > variation_degree) or np.any(variation_degree > 1):
             raise ValueError('variation_degree should be between 0 and 1')
         variations = []
-        for _ in tqdm(range(num_variations_per_sample)):
+        for _ in tqdm(range(num_variations_per_sample), desc="Counting candidates", unit='candidate'):
             sub_variations = self._image_variation(
                 samples=samples,
                 prompts=list(additional_info),
@@ -219,7 +212,7 @@ class StableDiffusionAPI(API):
             variations.append(sub_variations)
         return np.stack(variations, axis=1)
 
-    def _image_variation(self, samples, prompts, size, variation_degree):
+    def _image_variation(self, samples, prompts, size, variation_degree: Union[np.ndarray, float]):
         width, height = list(map(int, size.split('x')))
         variation_transform = T.Compose([
             T.Resize(
@@ -232,21 +225,21 @@ class StableDiffusionAPI(API):
         samples = [variation_transform(Image.fromarray(im))
                   for im in samples]
         samples = torch.stack(samples).to(self.device)
-        print(samples.shape)
-        max_batch_size = self._variation_batch_size
+        max_batch_size = 1 if isinstance(variation_degree, np.ndarray) else self._variation_batch_size
         variations = []
         num_iterations = int(np.ceil(
             float(samples.shape[0]) / max_batch_size))
-        for iteration in tqdm(range(num_iterations), leave=False):
+        for iteration in tqdm(range(num_iterations), leave=False, desc="Generating candidates", unit='batch'):
+            degree = variation_degree[iteration] if isinstance(variation_degree, np.ndarray) else variation_degree
+            inference_steps = int(np.ceil(self._variation_num_inference_steps / degree)) if 'turbo' in self._variation_checkpoint else self._variation_num_inference_steps
+                
             variations.append(self._variation_pipe(
                 prompt=prompts[iteration * max_batch_size:
                                (iteration + 1) * max_batch_size],
-                # negative_prompts=negative_prompts[iteration * max_batch_size:
-                #                (iteration + 1) * max_batch_size],
                 image=samples[iteration * max_batch_size:
                              (iteration + 1) * max_batch_size],
-                num_inference_steps=self._variation_num_inference_steps,
-                strength=variation_degree,
+                num_inference_steps=inference_steps,
+                strength=degree,
                 guidance_scale=self._variation_guidance_scale,
                 num_images_per_prompt=1,
                 output_type='np').images)
