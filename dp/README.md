@@ -9,6 +9,8 @@
 * `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, *default=0*
 * `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, *default=False*
 
+
+
 #### Schedulers
 * 구현된 종류: constant, linear, step, exponential
 * 스케줄러별 상세 argument 목록은 `/dpsda/schedulers.py`의 각 스케줄러 클래스의 `command_line_parser()` 함수에서 확인 가능
@@ -22,13 +24,20 @@
   * `weight_scheduler`: 사용할 스케줄러 이름, *default=constant*
 
 
-### Privacy
+
+
+
+#### Privacy
 * `dp`: DP 적용 여부, *default=True*
 * `delta`: epsilon DP 완화 정도 *default=0.0*
 * `epsilon_delta_dp`: 1/N_syn 값으로 delta 값 설정 여부, True일 경우 `delta` 값 무시, *default=True*
 
 
-### General
+
+
+
+
+#### General
 * `random_seed`: 난수 조절, *default=2024*
 * `num_samples`: 몇 개의 샘플을 생성할지, *default=0*
 * `T`: 몇 번 동안 반복할지 *default=0*
@@ -38,7 +47,7 @@
 * `public_data_folder`: seed population으로 사용할 public data의 경로, `use_public_data`가 False일 경우 무시됨.
 
 
-### Wandb
+#### Wandb
 ***어떤 실험을 돌리든 자동으로 wandb에 기록됨***
 * `wandb_log_notes`: 실험을 간략하게 소개하는 문구 지정, 추후 wandb 사이트에서 수정 가능
 * `wandb_log_tags`: 실험을 분류하기 위한 태그, 추후 wandb 사이트에서 수정 가능 
@@ -96,7 +105,7 @@
 ### All together
 
 <details>
-<summary><b> ALL together </b></summary>
+<summary> Cookie 예시 </summary>
 
 ```
 python main.py \
