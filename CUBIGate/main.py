@@ -82,7 +82,7 @@ def on_message_callback_train(ch, method, properties, body):
         
         result = {"job_id": job_id, "result": {"file_path": result_file_path}}
         # send result to callback url
-        requests.post(callback_url, json=result)
+        # requests.post(callback_url, json=result)
         
         logging.info(f"Result file path: {result_file_path}")
         logging.info(f" [x] Done")
@@ -90,12 +90,13 @@ def on_message_callback_train(ch, method, properties, body):
         result_str = json.dumps(result)
         # Update job status to success
         db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
-    finally:
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+    #finally:
+        #ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def on_message_callback_generate(ch, method, properties, body):
@@ -118,7 +119,7 @@ def on_message_callback_generate(ch, method, properties, body):
         
         result = {"job_id": job_id, "result": {"file_path": file_name}}
         # send result to callback url
-        requests.post(callback_url, json=result)
+        #requests.post(callback_url, json=result)
         
         logging.info(f"Result file path: {file_name}")
         logging.info(f" [x] Done")
@@ -130,8 +131,8 @@ def on_message_callback_generate(ch, method, properties, body):
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
-    finally:
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+    #finally:
+        #ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 
