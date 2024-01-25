@@ -63,7 +63,10 @@ class Scheduler(ABC):
         self._step_count += 1
         if self._step_count > self. _T:
             raise Exception(f"Exceeded the total number of variation")
-        self._next = self._get_next()
+        if self._step_count == 1:
+            self._next = self._last
+        else:
+            self._next = self._get_next()
         self._last = self._next
         return self._next
 

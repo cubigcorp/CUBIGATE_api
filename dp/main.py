@@ -2,10 +2,7 @@ import argparse
 import logging
 import os
 import numpy as np
-import imageio
 import wandb
-from torchvision.utils import make_grid
-import torch
 from tqdm.auto import tqdm
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
@@ -15,7 +12,7 @@ from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool, split_args, split_schedulers_args, slice_scheduler_args
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples, log_count
+from dpsda.data_logger import log_samples, log_count, log_fid, visualize
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data, log_plot
@@ -413,53 +410,6 @@ def parse_args():
     return args, api, degree_scheduler, weight_scheduler
 
 
-def round_to_uint8(image):
-    return np.around(np.clip(image, a_min=0, a_max=255)).astype(np.uint8)
-
-
-def visualize(samples, packed_samples, count, folder, suffix=''):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    samples = samples.transpose((0, 3, 1, 2))
-    packed_samples = packed_samples.transpose((0, 1, 4, 2, 3))
-
-    ids = np.argsort(count)[::-1][:5]
-    print(count[ids])
-    vis_samples = []
-    for i in range(len(ids)):
-        vis_samples.append(samples[ids[i]])
-        for j in range(packed_samples.shape[1]):
-            vis_samples.append(packed_samples[ids[i]][j])
-    vis_samples = np.stack(vis_samples)
-    vis_samples = make_grid(
-        torch.Tensor(vis_samples),
-        nrow=packed_samples.shape[1] + 1).numpy().transpose((1, 2, 0))
-    vis_samples = round_to_uint8(vis_samples)
-    imageio.imsave(
-        os.path.join(folder, f'visualize_top_{suffix}.png'), vis_samples)
-
-    ids = np.argsort(count)[:5]
-    print(count[ids])
-    vis_samples = []
-    for i in range(len(ids)):
-        vis_samples.append(samples[ids[i]])
-        for j in range(packed_samples.shape[1]):
-            vis_samples.append(packed_samples[ids[i]][j])
-    vis_samples = np.stack(vis_samples)
-    vis_samples = make_grid(
-        torch.Tensor(vis_samples),
-        nrow=packed_samples.shape[1] + 1).numpy().transpose((1, 2, 0))
-    vis_samples = round_to_uint8(vis_samples)
-    imageio.imsave(
-        os.path.join(folder, f'visualize_bottom_{suffix}.png'), vis_samples)
-
-
-def log_fid(folder, fid, t):
-    with open(os.path.join(folder, 'fid.csv'), 'a') as f:
-        f.write(f'{t} {fid}\n')
-
-
-
 def main():
     args, api, degree_scheduler, weight_scheduler = parse_args()
     config = dict(vars(args), **vars(api.args))
@@ -649,7 +599,7 @@ def main():
                 logging.info("Calculating adaptive variation degree")
                 logging.info(f"Maximum degree for t={t}: {variation_degree_t:.2f}")
                 variation_degree = []
-                for class_i in private_classes:
+                for class_i, class_ in enumerate(private_classes):
                     # count: (Nsyn)
                     # samples: (Nsyn, ~)
                     sub_count = count[
@@ -810,20 +760,7 @@ def main():
         losers = np.concatenate(losers)
         count = np.concatenate(count)
         count_1st_idx = np.concatenate(count_1st_idx)
-        if args.modality == 'image':
-            for class_i, class_ in enumerate(private_classes):
-                visualize(
-                    samples=samples[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    packed_samples=packed_samples[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    count=count[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    folder=f'{args.result_folder}/{t}',
-                    suffix=f'class{class_}')
+        
         logging.info('Generating new indices')
         if args.num_samples == 0:
             assert args.num_samples_schedule[t] % private_num_classes == 0
@@ -853,7 +790,6 @@ def main():
                     size=new_num_samples_per_class,
                     p=sub_count / np.sum(sub_count))
                     
-
                 new_indices.append(sub_indices)
             new_indices = np.concatenate(new_indices)
             new_samples = samples[new_indices]
@@ -870,6 +806,21 @@ def main():
                 candidate=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
+
+        if args.modality == 'image':
+            for class_i, class_ in enumerate(private_classes):
+                visualize(
+                    samples=samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    packed_samples=packed_samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    count=count[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    folder=f'{args.result_folder}/{t}',
+                    suffix=f'class{class_}')
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')
