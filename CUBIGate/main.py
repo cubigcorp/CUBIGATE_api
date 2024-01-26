@@ -9,6 +9,9 @@ import pika
 import sys
 import json
 import requests
+import torch
+
+logging.getLogger("pika").propagate = False
 
 #fixed values for display
 generator = CubigDPGenerator()
@@ -68,6 +71,11 @@ def on_message_callback_train(ch, method, properties, body):
         data=json.loads(data)
         job_id = data['job_id']
         
+        service_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
+        if service_status['status'] == 'SUCCESS' or service_status['status'] == 'FAILED':
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
         # Get callback URL
         callback_url = db_connector.execute_query('service_request_get_callback_url', params=[job_id], fetch_all=False)
         logging.info(f"Job id: {job_id} - Callback URL: {callback_url}")
@@ -82,21 +90,22 @@ def on_message_callback_train(ch, method, properties, body):
         
         result = {"job_id": job_id, "result": {"file_path": result_file_path}}
         # send result to callback url
-        # requests.post(callback_url, json=result)
+        if callback_url:
+            requests.post(callback_url, json=result)
         
         logging.info(f"Result file path: {result_file_path}")
-        logging.info(f" [x] Done")
         
         result_str = json.dumps(result)
         # Update job status to success
         db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        #ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
-    #finally:
-        #ch.basic_ack(delivery_tag=method.delivery_tag)
+    finally:
+        logging.info(f" [x] Done")
+        ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def on_message_callback_generate(ch, method, properties, body):
@@ -106,6 +115,11 @@ def on_message_callback_generate(ch, method, properties, body):
         data=json.loads(data)
         job_id = data['job_id']
         
+        service_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
+        if service_status['status'] == 'SUCCESS' or service_status['status'] == 'FAILED':
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
         empty_json_str = json.dumps({})
         
         # Get callback URL
@@ -119,20 +133,23 @@ def on_message_callback_generate(ch, method, properties, body):
         
         result = {"job_id": job_id, "result": {"file_path": file_name}}
         # send result to callback url
-        #requests.post(callback_url, json=result)
+        if callback_url:
+            requests.post(callback_url, json=result)
         
         logging.info(f"Result file path: {file_name}")
-        logging.info(f" [x] Done")
         
         result_str = json.dumps(result)
         # Update job status to success
         db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+        #ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
-    #finally:
-        #ch.basic_ack(delivery_tag=method.delivery_tag)
+    finally:
+        logging.info(f" [x] Done")
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+        #torch.cuda.empty_cache()
 
 
 
@@ -157,6 +174,8 @@ while True:
         else:
             channel.basic_consume(queue_name, on_message_callback_generate)
         channel.start_consuming()
+        #connection = mq_connector.connection
+        #connection.process_data_events()
     # Don't recover if connection was closed by broker
     except pika.exceptions.ConnectionClosedByBroker:
         break
@@ -164,5 +183,6 @@ while True:
     except pika.exceptions.AMQPChannelError:
         break
     # Recover on all other connection errors
-    except pika.exceptions.AMQPConnectionError:
+    except pika.exceptions.AMQPConnectionError as e:
+        logging.error(f'Error: {str(e)}')
         continue

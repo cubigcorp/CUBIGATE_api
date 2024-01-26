@@ -2,20 +2,21 @@ import torch
 import torchvision.transforms as T
 from PIL import Image
 import numpy as np
-from tqdm import tqdm
-from diffusers import StableDiffusionPipeline
-from diffusers import StableDiffusionImg2ImgPipeline
+from tqdm.auto import tqdm
+from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
+from typing import Optional, Union
+import warnings
+warnings.filterwarnings("ignore", message=r"Passing", category=FutureWarning)
+from cubigate.dp.utils.pytorch_utils import dev
 
 from .api import API
-from cubigate.dp.utils.pytorch_utils import dev
-from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
+
 
 def _round_to_uint8(image):
     return np.around(np.clip(image * 255, a_min=0, a_max=255)).astype(np.uint8)
 
-
 class StableDiffusionAPI(API):
-    def __init__(self,
+    def __init__(self, 
                  API_checkpoint,
                  guidance_scale,
                  inference_steps,
@@ -23,28 +24,34 @@ class StableDiffusionAPI(API):
                  prompt,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.prompt = prompt
         self._random_sampling_checkpoint = API_checkpoint
         self._random_sampling_guidance_scale = guidance_scale
         self._random_sampling_num_inference_steps = \
             inference_steps
         self._random_sampling_batch_size = API_batch_size
-
-        self._random_sampling_pipe = AutoPipelineForText2Image.from_pretrained(
+        self._random_sampling_pipe =  AutoPipelineForText2Image.from_pretrained(
             self._random_sampling_checkpoint, torch_dtype=torch.float16)
+        self._random_sampling_pipe.set_progress_bar_config(disable=True)
         self._random_sampling_pipe.safety_checker = None
-        self._random_sampling_pipe = self._random_sampling_pipe.to(dev())
 
         self._variation_checkpoint = API_checkpoint
         self._variation_guidance_scale = guidance_scale
         self._variation_num_inference_steps = inference_steps
         self._variation_batch_size = API_batch_size
 
-        self._variation_pipe = AutoPipelineForImage2Image.from_pretrained(
-                self._variation_checkpoint,
-                torch_dtype=torch.float16, )
+
+        if self._variation_checkpoint == self._random_sampling_checkpoint:
+            # 동일한 checkpoint일 경우 재활용으로 메모리 절약
+            self._variation_pipe = AutoPipelineForImage2Image.from_pipe(self._random_sampling_pipe)
+        else:
+            self._variation_pipe = \
+                    AutoPipelineForImage2Image.from_pretrained(
+                        self._variation_checkpoint,
+                        torch_dtype=torch.float16, )
         self._variation_pipe.safety_checker = None
-        self._variation_pipe = self._variation_pipe.to(dev())
-        self.prompt = prompt
+        self._variation_pipe.set_progress_bar_config(disable=True)
+        self._variation_pipe.to(dev())
 
     @staticmethod
     def command_line_parser():
@@ -90,6 +97,9 @@ class StableDiffusionAPI(API):
                 The size of the generated images in the format
                 "widthxheight". Options include "256x256", "512x512", and
                 "1024x1024".
+            prompts (List[str]):
+                The text prompts to generate images from. Each promot will be
+                used to generate num_samples/len(prompts) number of samples.
 
         Returns:
             numpy.ndarray:
@@ -100,6 +110,7 @@ class StableDiffusionAPI(API):
                 A numpy array with length num_samples containing prompts for
                 each image.
         """
+        self._random_sampling_pipe.to(dev())
         max_batch_size = self._random_sampling_batch_size
         images = []
         width, height = list(map(int, size.split('x')))
@@ -116,6 +127,7 @@ class StableDiffusionAPI(API):
                 guidance_scale=self._random_sampling_guidance_scale,
                 num_images_per_prompt=batch_size,
                 output_type='np').images))
+        del self._random_sampling_pipe
         return np.concatenate(images, axis=0)
 
     def variation(self, samples,
