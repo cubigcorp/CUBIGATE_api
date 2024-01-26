@@ -327,6 +327,7 @@ class CubigDPGenerator():
         # 1. Make sure it has API instance
         if not hasattr(self, 'api'):
             self.api = self.api_class.from_command_line_args(api_args)
+            self.api._init_variate()
 
         # 2. Load base data
         samples = load_samples(base_data)

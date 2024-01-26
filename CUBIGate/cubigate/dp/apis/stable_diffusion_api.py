@@ -41,18 +41,6 @@ class StableDiffusionAPI(API):
         self._variation_batch_size = API_batch_size
 
 
-        if self._variation_checkpoint == self._random_sampling_checkpoint:
-            # 동일한 checkpoint일 경우 재활용으로 메모리 절약
-            self._variation_pipe = AutoPipelineForImage2Image.from_pipe(self._random_sampling_pipe)
-        else:
-            self._variation_pipe = \
-                    AutoPipelineForImage2Image.from_pretrained(
-                        self._variation_checkpoint,
-                        torch_dtype=torch.float16, )
-        self._variation_pipe.safety_checker = None
-        self._variation_pipe.set_progress_bar_config(disable=True)
-        self._variation_pipe.to(dev())
-
     @staticmethod
     def command_line_parser():
         parser = super(
@@ -127,7 +115,7 @@ class StableDiffusionAPI(API):
                 guidance_scale=self._random_sampling_guidance_scale,
                 num_images_per_prompt=batch_size,
                 output_type='np').images))
-        del self._random_sampling_pipe
+        self._init_variate()
         return np.concatenate(images, axis=0)
 
     def variation(self, samples,
@@ -202,3 +190,14 @@ class StableDiffusionAPI(API):
                 output_type='np').images)
         variations = _round_to_uint8(np.concatenate(variations, axis=0))
         return variations
+
+
+    def _init_variate(self):
+        del self._random_sampling_pipe
+        self._variation_pipe = \
+                    AutoPipelineForImage2Image.from_pretrained(
+                        self._variation_checkpoint,
+                        torch_dtype=torch.float16, )
+        self._variation_pipe.safety_checker = None
+        self._variation_pipe.set_progress_bar_config(disable=True)
+        self._variation_pipe.to(dev())

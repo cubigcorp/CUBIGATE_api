@@ -14,19 +14,25 @@ import torch
 logging.getLogger("pika").propagate = False
 
 #fixed values for display
-generator = CubigDPGenerator()
+#generator = CubigDPGenerator()
 db_connector = DBConnector()
 
 #Just train the model to make DP-synthetic data
 def train_data_generation_model(iterations=2, epsilon=1, delta=0):
+    generator = CubigDPGenerator()
     data_checkpoint=generator.train(iterations, epsilon, delta)
     print(data_checkpoint)
+    del generator
+    torch.cuda.empty_cache()
     return  data_checkpoint
 
 #Just generate data with your data checkpoint (data checkpoint means model chekcpoint in Cubigate)
 #Output: zip file of new data.
 def generate_dp_data(base_data="./result/cookie/1/_samples.npz"):
+    generator = CubigDPGenerator()
     new_data=generator.generate(base_data)
+    del generator
+    torch.cuda.empty_cache()
     print(type(new_data))
     return new_data
     
