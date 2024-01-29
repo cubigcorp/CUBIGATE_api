@@ -1,0 +1,23 @@
+{
+    "rabbitmq":  {
+        "host": "203.255.176.55",
+        "port": "30006",
+        "vhost": "cubig-factory",
+        "username": "cubig",
+        "password": "l$lpW2SAax{$B$HEK$48"	
+    },
+    "s3": {
+        "endpoint_url": "https://kr.object.ncloudstorage.com",
+        "region_name": "kr-standard",
+        "access_key": "4C39A4937E0079E5C294",
+        "secret_key": "82F8F03F03F505B9AE0E56926FF6E19152481937",
+        "bucket_name": "cubig-factory-dev"
+    },
+    "db": {
+        "host": "203.255.176.55",
+        "port": 30005,
+        "name": "cubig-factory",
+        "username": "cubig-factory",
+        "password": "cubigfactory2023!"
+      }
+}
