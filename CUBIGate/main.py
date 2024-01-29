@@ -156,6 +156,14 @@ def on_message_callback_generate(ch, method, properties, body):
         logging.info(f" [x] Done")
         ch.basic_ack(delivery_tag=method.delivery_tag)
         #torch.cuda.empty_cache()
+        
+def on_message_callback_clear_messages(ch, method, properties, body):
+    data = body.decode()
+    data=json.loads(data)
+    job_id = data['job_id']
+    empty_json_str = json.dumps({})
+    db_connector.execute_query('service_request_update', params=[job_id, 'KILLED', empty_json_str, ''], fetch_all=False)
+    ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 
