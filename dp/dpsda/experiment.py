@@ -1,9 +1,7 @@
-from matplotlib import pyplot as plt
-import os
 from typing import Literal, Optional, Tuple
 import logging
 import numpy as np
-import wandb
+
 
 COLORS = {-1: 'blue', 0: 'green', 1: 'yellow', 2: 'purple', 3: 'teal', 4: 'olive', 
           5: 'peru', 6: 'crimson', 7: 'orange', 8: 'black', 9: 'darkgreen'}
@@ -112,35 +110,3 @@ def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position
     samples = normalize(samples, size)
     return samples, labels
    
-
-
-def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str, margin: int = 0.05) -> None:
-    colors = np.array_split(synthetic_samples, 2, axis=1)[1].flatten()
-    other_color_idx = np.where(colors != -1)[0]
-    if len(other_color_idx) != len(synthetic_samples):
-        blue_color_idx = np.array([idx for idx in range(synthetic_samples.shape[0]) if idx not in other_color_idx])
-        blue_samples = synthetic_samples[blue_color_idx]
-
-    x_syn_in_prv = np.where((private_samples[:, 0].min() - margin <= synthetic_samples[:, 0]) & (synthetic_samples[:, 0] <= private_samples[:, 0].max() + margin))[0]
-    y_syn_in_prv = np.where((private_samples[:, 1].min() - margin <= synthetic_samples[:, 1]) & (synthetic_samples[:, 1] <= private_samples[:, 1].max() + margin))[0]
-    syn_in_prv = len(np.intersect1d(x_syn_in_prv, y_syn_in_prv))
-    
-    fig = plt.figure()
-    plt.scatter(private_samples[:, 0], private_samples[:, 1], color='red', label='Private')
-    if 'blue_samples' in vars():
-        plt.scatter(blue_samples[:, 0], blue_samples[:, 1], color='blue', label='Synthetic')
-    for idx in other_color_idx:
-        plt.scatter(synthetic_samples[idx, 0], synthetic_samples[idx, 1], color=COLORS[synthetic_samples[idx, 2]], marker="*")
-    plt.title(f"Private vs Synthetic at step {step}")
-    plt.suptitle(f"#Syn in Prv: {syn_in_prv}")
-    # 범례 추가
-    plt.legend()
-
-    # x축과 y축에 실선 추가
-    plt.axhline(y=0, color='black', linewidth=1)
-    plt.axvline(x=0, color='black', linewidth=1)
-    plt.xlim(-1, 1)
-    plt.ylim(-1, 1)
-    plt.savefig(os.path.join(dir, f"{step}_plot.png"))
-    wandb.log({"syn_in_prv": syn_in_prv, 't': step})
-    wandb.log({'plot' : wandb.Image(fig), 't': step})
