@@ -18,6 +18,7 @@ from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data
 from dpsda.schedulers import get_scheduler_class_from_name
+from dpsda.prompt_generator import PromptGenerator
 
 
 
@@ -89,11 +90,7 @@ def parse_args():
         default=0.0,
         type=float,
         required=False)
-    parser.add_argument(
-        '--random_seed',
-        type=int,
-        default=2024
-    )
+
     ours_group = parser.add_argument_group("Ours")
     ours_group.add_argument(
         '--use_weight_scheduler',
@@ -136,7 +133,19 @@ def parse_args():
         required=False,
         default=0)
     
+    ours_group.add_argument(
+        '--use_sample_specific_prompt',
+        type=str2bool,
+        default=False,
+        help="Whether to use sample-specific prompt"
+    )
+    
     general = parser.add_argument_group("Generaal")
+    general.add_argument(
+        '--random_seed',
+        type=int,
+        default=2024
+    )
     general.add_argument(
         '--device',
         type=int,
@@ -363,8 +372,8 @@ def parse_args():
     args, other_args = parser.parse_known_args()
     if args.epsilon_delta_dp:
         args.delta = 1 / args.num_samples
-    if args.use_degree_scheduler or args.use_weight_scheduler:
-        api_args, scheduler_args = split_args(other_args)
+    if args.use_degree_scheduler or args.use_weight_scheduler or args.use_sample_specific_prompt:
+        api_args, scheduler_args, prompt_args = split_args(other_args)
         if not args.use_degree_scheduler:  # weight scheduler only
             weight_args = slice_scheduler_args(scheduler_args)
         elif not args.use_weight_scheduler:  # degree scheduler only 
@@ -408,11 +417,11 @@ def parse_args():
         weight_scheduler = weight_scheduler_class.from_command_line_args(args=weight_args, T=T)
     else:
         weight_scheduler =None
-    return args, api, degree_scheduler, weight_scheduler
+    return args, api, degree_scheduler, weight_scheduler, prompt_args
 
 
 def main():
-    args, api, degree_scheduler, weight_scheduler = parse_args()
+    args, api, degree_scheduler, weight_scheduler, prompt_args = parse_args()
     config = dict(vars(args), **vars(api.args))
     if args.use_degree_scheduler:
         config.update(**vars(degree_scheduler.args))
@@ -533,7 +542,12 @@ def main():
                 prompt=args.initial_prompt)
             start_t = 1
         else:
-            
+            if args.use_sample_specific_prompt:
+                generator = PromptGenerator(args.initial_prompt[0], prompt_args, rng)
+                generator.generate(5)
+                wandb.config.update(generator.tag_prompts)
+                import sys
+                sys.exit()
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
                 prompts=args.initial_prompt,
