@@ -3,7 +3,7 @@ import torchvision.transforms as T
 from PIL import Image
 import numpy as np
 from tqdm.auto import tqdm
-from diffusers import AutoPipelineForText2Image
+from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
 from apis.adapter.ip_adapter import IPAdapter
 from typing import Optional, Union
 import warnings
@@ -207,45 +207,75 @@ class StableDiffusionAPI(API):
             raise ValueError('variation_degree should be between 0 and 1')
         width, height = list(map(int, size.split('x')))
         variations = []
-        out = self._get_weights_images(samples=samples, prompts=additional_info, demo_samples=demo_samples, demo_weights=demo_weights, sample_weight=sample_weight)
-        max_batch_size = self._variation_batch_size
+        max_batch_size = 1 if 'turbo' in self._variation_checkpoint else self._variation_batch_size
+        prompts = list(additional_info)
         if demo_samples is None:
             num_less_demo = 0
-            
         else:
+            out = self._get_weights_images(prompts=prompts, demo_samples=demo_samples, demo_weights=demo_weights)
             num_less_demo = demo_samples.shape[1]
             # max_batch_size = self._variation_batch_size // (demo_samples.shape[1] + 1)
         num_iterations = int(np.ceil(
             float(samples.shape[0] - num_less_demo) / max_batch_size) + num_less_demo)
-        
+
+        variation_transform = T.Compose([
+            T.Resize(
+                (width, height),
+                interpolation=T.InterpolationMode.BICUBIC),
+            T.ToTensor(),
+            T.Normalize(
+                [0.5, 0.5, 0.5],
+                [0.5, 0.5, 0.5])])
+        samples = [variation_transform(Image.fromarray(sample))
+                for sample in samples]
+        samples = torch.stack(samples).to(self.device)
+
         for iteration in tqdm(range(num_iterations), desc="Generating candidates", unit='sample'):
             batch_size = 1 if iteration < num_less_demo else max_batch_size
             start_idx = iteration if iteration <= num_less_demo else num_less_demo + (iteration - num_less_demo) * batch_size
             end_idx = start_idx + batch_size
-            degree = variation_degree[start_idx:end_idx] if isinstance(variation_degree, np.ndarray) else variation_degree
-            pos_embeds, neg_embeds, pooled_pos_embeds, pooled_neg_embeds = zip(*out[start_idx:end_idx])
-            pos_embeds, pooled_pos_embeds = tuple_into_tensor((pos_embeds, pooled_pos_embeds))
-            image = self._variation_pipe(
-                prompt_embeds=pos_embeds,
-                pooled_prompt_embeds=pooled_pos_embeds,
-                width=width,
-                height=height,
-                guidance_scale=self._variation_guidance_scale,
-                num_inference_steps=self._variation_num_inference_steps,
-                num_images_per_prompt=num_variations_per_sample,
-                output_type='np'
-            ).images
+            degree = variation_degree[start_idx:end_idx].squeeze() if isinstance(variation_degree, np.ndarray) else variation_degree
+            if 'turbo' in self._variation_checkpoint:
+                inference_steps = int(np.ceil(self._variation_num_inference_steps / degree))
+            if demo_samples is not None:
+                pos_embeds, neg_embeds, pooled_pos_embeds, pooled_neg_embeds = zip(*out[start_idx:end_idx])
+                pos_embeds, pooled_pos_embeds = tuple_into_tensor((pos_embeds, pooled_pos_embeds))
+                image = self._variation_pipe(
+                    image=samples[start_idx:end_idx],
+                    prompt_embeds=pos_embeds,
+                    pooled_prompt_embeds=pooled_pos_embeds,
+                    width=width,
+                    height=height,
+                    strength=degree,
+                    guidance_scale=self._variation_guidance_scale,
+                    num_inference_steps=inference_steps,
+                    num_images_per_prompt=num_variations_per_sample,
+                    output_type='np'
+                ).images
+            else:
+                image = self._variation_pipe(
+                    prompt=prompts[start_idx:end_idx],
+                    image=samples[start_idx:end_idx],
+                    width=width,
+                    height=height,
+                    strength=degree,
+                    guidance_scale=self._variation_guidance_scale,
+                    num_inference_steps=self._variation_num_inference_steps,
+                    num_images_per_prompt=num_variations_per_sample,
+                    output_type='np'
+                ).images
             batch_image = np.stack(image, axis=0)
             batch_image = batch_image.reshape((-1, num_variations_per_sample) + batch_image.shape[1:])
             variations.append(batch_image)
         variations = _round_to_uint8(np.concatenate(variations, axis=0))
+        print(variations.shape)
         return variations
 
 
     def _initial_variate(self):
         del self._random_sampling_pipe
         self._variation_pipe = \
-                    AutoPipelineForText2Image.from_pretrained(
+                    AutoPipelineForImage2Image.from_pretrained(
                         self._variation_checkpoint,
                         torch_dtype=torch.float16, )
         dir = os.path.dirname(os.path.abspath(__file__))
@@ -266,32 +296,17 @@ class StableDiffusionAPI(API):
 
 
     def _get_weights_images(self,
-                             samples: np.ndarray,
                              prompts: np.ndarray,
-                             demo_samples: Optional[np.ndarray],
-                             demo_weights: Optional[np.ndarray],
-                             sample_weight: float = 1.0):
-
-        if demo_samples is None:
-            images = samples[:, np.newaxis, :]
-            weights = np.full((len(samples), 1), sample_weight)
-            num_demo = 0
-        else:
-            samples = samples[:, np.newaxis, :]
-            images = np.concatenate([samples, demo_samples], axis=1)
-            demo_weights = (1 - sample_weight) * demo_weights
-            weights = np.insert(demo_weights, 0, sample_weight, axis=1)
-            weights[0, 0] = 1.0
-            num_demo = demo_samples.shape[1]
-
+                             demo_samples: np.ndarray,
+                             demo_weights: np.ndarray):
         out = []
-        for idx in range(len(samples)):
-            if idx < num_demo:
-                target_images = images[idx][:1 + idx]
-                target_weights = weights[idx][:1 + idx]
+        for idx in range(len(demo_samples)):
+            if idx < demo_samples.shape[1]:
+                target_images = demo_samples[idx][:1 + idx]
+                target_weights = demo_weights[idx][:1 + idx]
             else:
-                target_images = images[idx]
-                target_weights = weights[idx]
+                target_images = demo_samples[idx]
+                target_weights = demo_weights[idx]
             out.append(self._variation_API.get_prompt_embeds(images=target_images, prompt=prompts[idx], weight=target_weights))
         
         return out

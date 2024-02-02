@@ -4,6 +4,7 @@ import os
 import numpy as np
 import wandb
 from tqdm.auto import tqdm
+from multiprocessing import Process
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
@@ -12,10 +13,10 @@ from dpsda.metrics import compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool, split_args, split_schedulers_args, slice_scheduler_args
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples, log_count, log_fid, visualize
+from dpsda.data_logger import log_samples, log_count, log_fid, visualize, log_plot, t_sne
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
-from dpsda.experiment import get_toy_data, log_plot
+from dpsda.experiment import get_toy_data
 from dpsda.schedulers import get_scheduler_class_from_name
 
 
@@ -488,6 +489,7 @@ def main():
     private_num_classes = len(private_classes)
     logging.info(f'Private_num_classes: {private_num_classes}')
 
+
     if args.make_fid_stats:
         logging.info(f'Computing {metric} stats')
         make_fid_stats(
@@ -503,6 +505,7 @@ def main():
 
     num_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
     num_samples_per_class = num_samples // private_num_classes
+    synthetic_labels = np.repeat(private_classes, num_samples_per_class)
 
     # Generating initial samples.
     if args.data_checkpoint_path != '':
@@ -537,12 +540,23 @@ def main():
                 num_samples=num_samples,
                 size=args.sample_size)
             logging.info(f"Generated initial samples: {len(samples)}")
+            tsne_p = Process(target=t_sne, kwargs={
+                'private_samples': all_private_samples,
+                'synthetic_samples': samples,
+                'private_labels': all_private_labels,
+                'synthetic_labels': synthetic_labels,
+                't': 0,
+                'perplexity': 5, 
+                'dir': args.result_folder
+            })
+            tsne_p.start()
             if args.modality == 'image':
                 visualize(
                     samples=samples[:100],
                     count=np.arange(len(samples)),
                     folder=f'{args.result_folder}/{0}',
-                    suffix='first_100')
+                    suffix='first_100',
+                    t=0)
             if not args.experimental:
                 log_samples(
                     samples=samples,
@@ -812,30 +826,7 @@ def main():
                 candidate=False)
             new_new_samples = np.squeeze(new_new_samples, axis=1)
             new_new_additional_info = new_additional_info
-
-        if args.modality == 'image':
-            for class_i, class_ in enumerate(private_classes):
-                visualize(
-                    samples=samples[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    packed_samples=packed_samples[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    count=count[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    folder=f'{args.result_folder}/{t}',
-                    suffix=f'class{class_}')
-                visualize(
-                    samples=samples[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    count=count[
-                        num_samples_per_class_w_candidate * class_i:
-                        num_samples_per_class_w_candidate * (class_i + 1)],
-                    folder=f'{args.result_folder}/{t}',
-                    suffix=f'class{class_}')
+        
 
         if args.compute_fid:
             logging.info(f'Computing {metric}')
@@ -859,9 +850,45 @@ def main():
             logging.info(f'fid={new_new_fid}')
             log_fid(args.result_folder, new_new_fid, t)
 
+        tsne_p.join()
+        wandb.log({'t-SNE': wandb.Image(f'{args.result_folder}/{t-1}_t-SNE.png'), 't': t-1})
         samples = new_new_samples
         additional_info = new_new_additional_info
-
+        tsne_p = Process(target=t_sne, kwargs={
+                'private_samples': all_private_samples,
+                'synthetic_samples': samples,
+                'private_labels': all_private_labels,
+                'synthetic_labels': synthetic_labels,
+                't': t,
+                'perplexity': 5, 
+                'dir': args.result_folder
+            })
+        tsne_p.start()
+        if args.modality == 'image':
+            for class_i, class_ in enumerate(private_classes):
+                visualize(
+                    samples=samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    packed_samples=packed_samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    count=count[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    folder=args.result_folder,
+                    t=t,
+                    suffix=f'class{class_}')
+                visualize(
+                    samples=samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    count=count[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    folder=args.result_folder,
+                    t=t,
+                    suffix=f'class{class_}')
         if args.experimental:
             log_plot(private_samples=all_private_samples,
                      synthetic_samples=samples, 
@@ -885,6 +912,8 @@ def main():
     artifact.add_file(local_path=log_file, name=wandb.run.name)
     wandb.log_artifact(artifact)
     os.remove(log_file)
+    tsne_p.join()
+    wandb.log({'t-SNE': wandb.Image(f'{args.result_folder}/{args.T}_t-SNE.png'), 't': args.T})
 
 if __name__ == '__main__':
     main()
