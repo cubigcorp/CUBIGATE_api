@@ -1,8 +1,10 @@
+# Models excluded
 docker
 models
 checkpoints
 lora
-logs
+*.safetensors
+*.bin
 # All the data excluded
 *.gz
 **/data/**/*.png
@@ -21,7 +23,9 @@ logs
 result/**/*.npz
 dp/result/**/*.npz
 CUBIGate/result/**/*_debug.npz
+# Logs and scripts excluded
 *.log
 *.sh
 *.json
 wandb
+logs
