@@ -65,12 +65,17 @@ def round_to_uint8(image):
 
 
 
-def visualize(samples: np.ndarray, count: np.ndarray, folder: str, packed_samples: Optional[np.ndarray] = None, suffix=''):
-    prefix = 'candidates_' if packed_samples is not None else ''
+def visualize(samples: np.ndarray, count: np.ndarray, folder: str, packed_samples: Optional[np.ndarray] = None, suffix='', n_row: int = 10):
     if not os.path.exists(folder):
         os.makedirs(folder)
     samples = samples.transpose((0, 3, 1, 2))
-    packed_samples = packed_samples.transpose((0, 1, 4, 2, 3))
+    if packed_samples is None:
+        prefix = ''
+        row = samples.shape[0] // n_row
+    else:
+        prefix = 'candidates_'
+        packed_samples = packed_samples.transpose((0, 1, 4, 2, 3))
+        row = packed_samples.shape[1] + 1
 
     ids = np.argsort(count)[::-1][:5]
     if packed_samples is not None:
@@ -84,7 +89,7 @@ def visualize(samples: np.ndarray, count: np.ndarray, folder: str, packed_sample
         vis_samples = samples
     vis_samples = make_grid(
         torch.Tensor(vis_samples),
-        nrow=packed_samples.shape[1] + 1).numpy().transpose((1, 2, 0))
+        nrow=row).numpy().transpose((1, 2, 0))
     vis_samples = round_to_uint8(vis_samples)
     imageio.imsave(
         os.path.join(folder, f'{prefix}top_samples_{suffix}.png'), vis_samples)
@@ -101,7 +106,7 @@ def visualize(samples: np.ndarray, count: np.ndarray, folder: str, packed_sample
         vis_samples = samples
     vis_samples = make_grid(
         torch.Tensor(vis_samples),
-        nrow=packed_samples.shape[1] + 1).numpy().transpose((1, 2, 0))
+        nrow=row).numpy().transpose((1, 2, 0))
     vis_samples = round_to_uint8(vis_samples)
     imageio.imsave(
         os.path.join(folder, f'{prefix}bottom_samples_{suffix}.png'), vis_samples)

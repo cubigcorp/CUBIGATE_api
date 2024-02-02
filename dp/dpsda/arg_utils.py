@@ -37,7 +37,8 @@ def split_schedulers_args(args: List):
     for i in range(0, len(args), 2):
         if 'degree' in args[i]:
             indices.extend([i, i+1])
-        np_args[i] = f"--{np_args[i].split('_')[-1]}"
+        arg_name = '_'.join(np_args[i].split('_')[2:])
+        np_args[i] = f"--{arg_name}"
 
     scheduler_args = np_args[indices].tolist()
     weight_args = np.delete(np_args, indices).tolist()

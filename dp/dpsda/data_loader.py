@@ -20,10 +20,10 @@ def load_private_data(data_dir, batch_size, sample_size, class_cond,
             T.ToTensor()
         ])
         dataset = ImageDataset(folder=data_dir, transform=transform)
-    elif modality == 'text' or modality == 'time-series' or modality=="tabular":
+    elif modality in ['text', 'time-series', "tabular"]:
         dataset = TextDataset(folder=data_dir, model=model)
 
-    loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=10,
+    loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=1,
                         pin_memory=torch.cuda.is_available(), drop_last=False)
     all_samples = []
     all_labels = []
@@ -34,7 +34,6 @@ def load_private_data(data_dir, batch_size, sample_size, class_cond,
             all_labels.append(cond.cpu().numpy())
 
         cnt += batch.shape[0]
-
         logging.info(f'loaded {cnt} samples')
         if batch.shape[0] < batch_size:
             logging.info('WARNING: containing incomplete batch. Please check'
@@ -48,7 +47,7 @@ def load_private_data(data_dir, batch_size, sample_size, class_cond,
         all_samples = np.around(np.clip(
             all_samples * 255, a_min=0, a_max=255)).astype(np.uint8)
         all_samples = np.transpose(all_samples, (0, 2, 3, 1))
-    elif modality == 'text' or modality == 'time-series' or modality=="tabular":
+    elif modality in ['text', 'time-series', "tabular"]:
         all_samples = all_samples.astype(np.int32)
     if class_cond:
         all_labels = np.concatenate(all_labels, axis=0)

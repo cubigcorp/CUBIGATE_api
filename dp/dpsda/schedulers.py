@@ -55,19 +55,19 @@ class Scheduler(ABC):
 
 
     def set_from_t(self, t: int) -> None:
-        while self._step_count < t:
+        while self._step_count <= t:
             self.step()
 
 
     def step(self) -> float:
-        self._step_count += 1
         if self._step_count > self. _T:
-            raise Exception(f"Exceeded the total number of variation")
+            raise Exception(f"Exceeded the number of variation")
         if self._step_count == 1:
             self._next = self._last
         else:
             self._next = self._get_next()
         self._last = self._next
+        self._step_count += 1
         return self._next
 
 
@@ -101,7 +101,7 @@ class StepScheduler(Scheduler):
         self._last = self._base
 
     def _get_next(self) -> float:
-        if self._step_count % self._step_size == 0:
+        if (self._step_count % self._step_size == 0) and (self._step_count != 0):
             return self._last * self._gamma
         else:
             return self._last

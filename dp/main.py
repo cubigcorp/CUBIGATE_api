@@ -509,7 +509,7 @@ def main():
         logging.info(
             f'Loading data checkpoint from {args.data_checkpoint_path}')
         samples, additional_info = load_samples(args.data_checkpoint_path)
-        if args.direct_variate and args.data_checkpoint_step > 1:
+        if args.direct_variate and args.data_checkpoint_step >= 1:
             assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
             (count, losers) = load_count(args.count_checkpoint_path)
             assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
@@ -537,6 +537,12 @@ def main():
                 num_samples=num_samples,
                 size=args.sample_size)
             logging.info(f"Generated initial samples: {len(samples)}")
+            if args.modality == 'image':
+                visualize(
+                    samples=samples[:100],
+                    count=np.arange(len(samples)),
+                    folder=f'{args.result_folder}/{0}',
+                    suffix='first_100')
             if not args.experimental:
                 log_samples(
                     samples=samples,
@@ -814,6 +820,15 @@ def main():
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
                     packed_samples=packed_samples[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    count=count[
+                        num_samples_per_class_w_candidate * class_i:
+                        num_samples_per_class_w_candidate * (class_i + 1)],
+                    folder=f'{args.result_folder}/{t}',
+                    suffix=f'class{class_}')
+                visualize(
+                    samples=samples[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
                     count=count[
