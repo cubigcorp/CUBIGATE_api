@@ -546,7 +546,6 @@ def main():
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': 0,
-                'perplexity': 5, 
                 'dir': args.result_folder
             })
             tsne_p.start()
@@ -860,7 +859,6 @@ def main():
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': t,
-                'perplexity': 5, 
                 'dir': args.result_folder
             })
         tsne_p.start()
