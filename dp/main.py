@@ -101,7 +101,7 @@ def parse_args():
         '--weight_scheduler',
         type=str,
         default="constant",
-        choices=['step', 'exponential', 'linear', 'constant']
+        choices=['step', 'exponential', 'linear', 'constant', 'wlinear']
     )
     ours_group.add_argument(
         '--sample_weight',
@@ -226,7 +226,7 @@ def parse_args():
         '--degree_scheduler',
         type=str,
         default='constant',
-        choices=['step', 'exponential', 'linear', 'constant'],
+        choices=['step', 'exponential', 'linear', 'constant', 'wlinear'],
         help='Variation degree scheduler')
     parser.add_argument(
         '--adaptive_variation_degree',

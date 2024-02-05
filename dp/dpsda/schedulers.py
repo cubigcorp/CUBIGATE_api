@@ -44,9 +44,6 @@ class Scheduler(ABC):
     def setting(self):
         pass
 
-    def get_last(self) -> float:
-        return self._last
-
 
     @abstractclassmethod
     def _get_next(self) -> float:
@@ -80,6 +77,8 @@ def get_scheduler_class_from_name(name: str):
         return LinearScheduler
     elif name == 'constant':
         return ConstantScheduler
+    elif name == 'wlinear':
+        return WLinearScheduler
     else:
         raise ValueError(f'Unknown scheduler name {name}')
 
@@ -219,3 +218,45 @@ class ConstantScheduler(Scheduler):
     def _get_next(self) -> float:
         return self._last
 
+
+
+class WLinearScheduler(Scheduler):
+    def __init__(self,
+                 base: float,
+                 warmup: int,
+                 min: float,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last = base
+        self._base = base
+        self._min = min
+        self._warmup = warmup
+
+    def _get_next(self) -> float:
+        if self._step_count < self._warmup:
+            return self._last
+        test = self._last  - self._step_size
+        return test if test >= 0 else 0
+
+
+    def setting(self):
+        self._step_size = (self._base - self._min) / self._T
+
+
+    @staticmethod
+    def command_line_parser():
+        parser = super(
+            LinearScheduler, LinearScheduler).command_line_parser()
+        parser.add_argument(
+            '--min',
+            type=float
+        )
+        parser.add_argument(
+            '--base',
+            type=float
+        )
+        parser.add_argument(
+            '--warmup',
+            type=int
+        )
+        return parser
