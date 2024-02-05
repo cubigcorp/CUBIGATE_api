@@ -460,18 +460,49 @@ def main():
 
     metric = "FID" if args.num_private_samples > 2048 else "KID"
     rng = np.random.default_rng(args.random_seed)
-
+ 
+    # 기존 private 한쪽에만 생기는 코드
+    # if args.experimental:
+    #     all_private_samples, all_private_labels = get_toy_data(
+    #         shape=args.toy_data_type[0],
+    #         y_position=args.toy_data_type[1],
+    #         x_position=args.toy_data_type[2],
+    #         num_data=args.num_private_samples,
+    #         ratio=args.toy_private_bounding_ratio,
+    #         num_labels=1,
+    #         size=args.sample_size,
+    #         rng=rng
+    #     )
+    #     all_private_features = all_private_samples[:, :2]
+    
+    
+    # private이 3곳에서 생기는 코드
     if args.experimental:
-        all_private_samples, all_private_labels = get_toy_data(
-            shape=args.toy_data_type[0],
-            y_position=args.toy_data_type[1],
-            x_position=args.toy_data_type[2],
-            num_data=args.num_private_samples,
-            ratio=args.toy_private_bounding_ratio,
-            num_labels=1,
-            size=args.sample_size,
-            rng=rng
-        )
+        # 여러 위치 설정
+        positions = [('upper', 'left'), ('upper', 'right'), ('lower', 'right')]
+        all_private_samples_list = []
+        all_private_labels_list = []
+
+        # 각 위치에 대한 데이터 생성 및 결합
+        for y_pos, x_pos in positions:
+            private_samples, private_labels = get_toy_data(
+                shape=args.toy_data_type[0],
+                y_position=y_pos,
+                x_position=x_pos,
+                num_data=args.num_private_samples // len(positions), # 전체 데이터 개수를 위치 수로 나누어 각 위치에 균등하게 할당
+                ratio=args.toy_private_bounding_ratio,
+                num_labels=1,
+                size=args.sample_size,
+                rng=rng
+            )
+            all_private_samples_list.append(private_samples)
+            all_private_labels_list.append(private_labels)
+
+        # 리스트에 저장된 모든 샘플과 레이블을 하나의 배열로 결합
+        all_private_samples = np.vstack(all_private_samples_list)
+        all_private_labels = np.concatenate(all_private_labels_list)
+
+        # 특징(좌표) 추출
         all_private_features = all_private_samples[:, :2]
     else:
         all_private_samples, all_private_labels = load_private_data(
