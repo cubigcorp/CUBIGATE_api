@@ -1,0 +1,21 @@
+version: '3.5'
+
+services:
+  dp-msv:
+    image: curebigdata/dp_msv:v1.5
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+    ports:
+      - "3000:3000"
+    volumes:
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+           size: 10000000000 # (this means 10GB)
+    command: conda run -n CUBIG python main.py train
+

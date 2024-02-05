@@ -5,24 +5,23 @@ import numpy as np
 import torch
 from cubigate.dp.utils.round import round_to_uint8
 
-def log_samples(samples, folder: str, save_each_sample: bool, save_npz=True, additional_info=None, prefix: str=''):
+def log_samples(samples, folder: str, plot_samples: bool, save_npz=True, prefix: str=''):
     if not os.path.exists(folder):
         os.makedirs(folder)
     if save_npz:
         np.savez(
             os.path.join(folder, f'{prefix}_samples.npz'),
-            samples=samples,
-            additional_info=additional_info)
-    if save_each_sample:
+            samples=samples)
+    if plot_samples:
         for i in range(samples.shape[0]):
             imageio.imwrite(os.path.join(folder, f'{prefix}_{i}.png'), samples[i])
 
 
-def log_count(count, clean_count, path):
+def log_count(count, path):
     dirname = os.path.dirname(path)
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    np.savez(path, count=count, clean_count=clean_count)
+    np.savez(path, count=count)
 
 def visualize(samples, packed_samples, count, folder, suffix=''):
     if not os.path.exists(folder):

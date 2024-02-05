@@ -1,0 +1,15 @@
+service: "service.py:svc"
+labels:
+  owner: michael
+  project: test
+include:
+- "*.py"
+- "*.npz"
+- "*.png"
+conda:
+    environment_yml: "./environment.yml"
+    pip:
+    - "mpi4py"
+models:
+- compvis-stable_defussion:v1.4
+- runwayml-stable_defussion:v1.5
