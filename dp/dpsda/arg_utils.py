@@ -17,16 +17,20 @@ def str2bool(v):
 
 
 def split_args(args: List):
-    indices = []
+    s_indices = []
+    p_indices = []
     np_args = np.asanyarray(args)
 
     for i in range(0, len(args), 2):
         if 'scheduler' in args[i]:
-            indices.extend([i, i+1])
+            s_indices.extend([i, i+1])
+        elif 'prompt' in args[i]:
+            p_indices.extend([i, i+1])
 
-    scheduler_args = np_args[indices].tolist()
-    api_args = np.delete(np_args, indices).tolist()
-    return api_args, scheduler_args
+    scheduler_args = np_args[s_indices].tolist()
+    prompt_args = np_args[p_indices].tolist()
+    api_args = np.delete(np_args, s_indices + p_indices).tolist()
+    return api_args, scheduler_args, prompt_args
 
 
 

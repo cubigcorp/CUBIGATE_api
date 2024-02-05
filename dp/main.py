@@ -546,17 +546,25 @@ def main():
                 generator = PromptGenerator(args.initial_prompt[0], prompt_args, rng)
                 generator.generate(5)
                 wandb.config.update(generator.tag_prompts)
-                import sys
-                sys.exit()
+                prompts = None
+            else:
+                prompts = args.initial_prompt
+                generator = None
             logging.info('Generating initial samples')
             samples, additional_info = api.random_sampling(
-                prompts=args.initial_prompt,
+                prompts=prompts,
+                generator=generator,
                 num_samples=num_samples,
                 size=args.sample_size)
             logging.info(f"Generated initial samples: {len(samples)}")
+            if args.modality == 'text':
+                tokens = [tokenize(args.feature_extractor, sample) for sample in samples]
+                tokens = np.array(packed_tokens)
+            else:
+                tokens = samples
             tsne_p = Process(target=t_sne, kwargs={
                 'private_samples': all_private_samples,
-                'synthetic_samples': samples,
+                'synthetic_samples': tokens,
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': 0,
@@ -567,7 +575,7 @@ def main():
                 visualize(
                     samples=samples[:100],
                     count=np.arange(len(samples)),
-                    folder=f'{args.result_folder}/{0}',
+                    folder=args.result_folder,
                     suffix='first_100',
                     t=0)
             if not args.experimental:
@@ -867,9 +875,14 @@ def main():
         wandb.log({'t-SNE': wandb.Image(f'{args.result_folder}/{t-1}_t-SNE.png'), 't': t-1})
         samples = new_new_samples
         additional_info = new_new_additional_info
+        if args.modality == 'text':
+                tokens = [tokenize(args.feature_extractor, sample) for sample in samples]
+                tokens = np.array(packed_tokens)
+        else:
+            tokens = samples
         tsne_p = Process(target=t_sne, kwargs={
                 'private_samples': all_private_samples,
-                'synthetic_samples': samples,
+                'synthetic_samples': tokens,
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': t,

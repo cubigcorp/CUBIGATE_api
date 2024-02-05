@@ -5,7 +5,8 @@ import numpy as np
 from tqdm.auto import tqdm
 from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
 from apis.adapter.ip_adapter import IPAdapter
-from typing import Optional, Union
+from typing import Optional, Union, List
+from dpsda.prompt_generator import PromptGenerator
 import warnings
 warnings.filterwarnings("ignore", message=r"Passing", category=FutureWarning)
 
@@ -114,7 +115,7 @@ class StableDiffusionAPI(API):
             help='The batch size for variation API')
         return parser
 
-    def random_sampling(self, num_samples, size, prompts):
+    def random_sampling(self, num_samples, size, prompts: Optional[List] = None, generator: Optional[PromptGenerator] = None):
         """
         Generates a specified number of random image samples based on a given
         prompt and size using OpenAI's Image API.
@@ -139,30 +140,33 @@ class StableDiffusionAPI(API):
                 A numpy array with length num_samples containing prompts for
                 each image.
         """
+        assert (prompts is None) ^ (generator is None)
         max_batch_size = self._random_sampling_batch_size
+        num_iterations = int(np.ceil(num_samples / max_batch_size))
         images = []
         return_prompts = []
         width, height = list(map(int, size.split('x')))
-        for prompt_i, prompt in enumerate(prompts):
-            num_samples_for_prompt = (num_samples + prompt_i) // len(prompts)
-            num_iterations = int(np.ceil(
-                float(num_samples_for_prompt) / max_batch_size))
-            for iteration in tqdm(range(num_iterations), desc="Generating initial samples", unit="batch"):
-                batch_size = min(
-                    max_batch_size,
-                    num_samples_for_prompt - iteration * max_batch_size)
-                image = _round_to_uint8(self._random_sampling_pipe(
-                    prompt=prompt,
-                    #negative_prompts=negative_prompts,
-                    width=width,
-                    height=height,
-                    num_inference_steps=(
-                        self._random_sampling_num_inference_steps),
-                    guidance_scale=self._random_sampling_guidance_scale,
-                    num_images_per_prompt=batch_size,
-                    output_type='np').images)
-                images.append(image)
-            return_prompts.extend([prompt] * num_samples_for_prompt)
+        if isinstance(prompts, List):
+            prompts = prompts * int(np.ceil(num_samples // len(prompts)))
+            prompts = prompts[:num_samples]
+        else:
+            prompts = generator.generate(num_samples)
+
+        for iteration in tqdm(range(num_iterations), desc="Generating initial samples", unit="batch"):
+            target_prompts = prompts[iteration * max_batch_size:
+                                    (iteration + 1) * max_batch_size]
+            image = _round_to_uint8(self._random_sampling_pipe(
+                prompt=target_prompts,
+                #negative_prompts=negative_prompts,
+                width=width,
+                height=height,
+                num_inference_steps=(
+                    self._random_sampling_num_inference_steps),
+                guidance_scale=self._random_sampling_guidance_scale,
+                num_images_per_prompt=1,
+                output_type='np').images)
+            images.append(image)
+            return_prompts.extend(target_prompts)
         self._initial_variate()
         return np.concatenate(images, axis=0), np.array(return_prompts)
 
@@ -268,7 +272,6 @@ class StableDiffusionAPI(API):
             batch_image = batch_image.reshape((-1, num_variations_per_sample) + batch_image.shape[1:])
             variations.append(batch_image)
         variations = _round_to_uint8(np.concatenate(variations, axis=0))
-        print(variations.shape)
         return variations
 
 

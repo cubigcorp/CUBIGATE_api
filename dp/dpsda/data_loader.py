@@ -79,6 +79,7 @@ def load_public_data(data_folder: str, modality: str, num_public_samples: int, p
         samples.append(sample)
         if len(samples) == num_public_samples:
             break
+    # [TODO] CLIP interrogate
     additional_info.extend([prompt[0].replace('BATCH', " ")] * len(samples))
     return np.array(samples), np.array(additional_info)
 
