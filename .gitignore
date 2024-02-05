@@ -23,6 +23,7 @@ lora
 result/**/*.npz
 dp/result/**/*.npz
 CUBIGate/result/**/*_debug.npz
+CUBIGate/input_data/*
 # Logs and scripts excluded
 *.log
 *.sh
