@@ -25,3 +25,4 @@ CUBIGate/result/**/*_debug.npz
 *.sh
 *.json
 wandb
+*.out
