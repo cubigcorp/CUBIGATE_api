@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dp-msv
+  name: dp-msv-generate
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dp-msv
+      app: dp-msv-generate
   template:
     metadata:
       labels:
-        app: dp-msv
+        app: dp-msv-generate
     spec:
       volumes:
       - name: dshm
@@ -18,19 +18,24 @@ spec:
           medium: Memory
       - name: huggingface-models
         hostPath:
-          path: /data/huggingface_data
+          path: /mnt/storage1/.cache
+          type: Directory
+      - name: dp-msv-result
+        hostPath:
+          path: /var/dp_msv
           type: Directory
       containers:
         - name: dp-msv-generate
-          image: curebigdata/dp_msv:v1.5
+          image: curebigdata/dp_msv:v1.6
           command: ["conda", "run", "-n", "CUBIG", "python", "main.py", "generate"]
           volumeMounts:
           - mountPath: /dev/shm
             name: dshm
           - mountPath: /root/.cache
             name: huggingface-models
+          - mountPath: /var/dp_msv
+            name: dp-msv-result
           resources:
            limits:
-             cpu: "4"
              nvidia.com/gpu: 1
 
