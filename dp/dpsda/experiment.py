@@ -27,12 +27,12 @@ def get_filter(arr: np.ndarray, lower: float, upper: float, tgt: int) -> np.ndar
 
 
 
-def get_samples_out_bounding(shape: str, rng: np.random.Generator, num_data: int, bounding: Tuple, size: str, ratio: float, distinctive: int = 10) -> np.ndarray:
+def get_samples_out_bounding(shape: str, seed: int, num_data: int, bounding: Tuple, size: str, distinctive: int = 10) -> np.ndarray:
     (x, y, w, h) = bounding
     samples = []
     diff = num_data
     while diff > 0:
-        temp = get_samples(shape, rng, diff, size=size)
+        temp = get_samples(shape, seed, diff, size=size)
         filter_x = get_filter(temp, x, x + w, 0)
         filter_y = get_filter(temp, y, y + h, 1)
         filter_xy = np.intersect1d(filter_x, filter_y)[:diff]
@@ -42,14 +42,22 @@ def get_samples_out_bounding(shape: str, rng: np.random.Generator, num_data: int
         temp = temp[filter_xy]
         samples.append(temp)
     samples = np.concatenate(samples).reshape((-1, 2))
-    samples = add_colors(samples, num_data, rng, distinctive)
+    samples = add_colors(samples, num_data, seed, distinctive)
     return normalize(samples, size)
 
 
 
-def add_colors(samples: np.ndarray, num_data: int, rng: np.random.Generator, distinctive: int = 10) -> np.ndarray:
+def get_samples_in_bounding(shape: str, seed: int, num_data: int, bounding: Tuple, size: str, distinctive: int = 10) -> np.ndarray:
+    samples = get_samples(shape, seed, num_data, bounding=bounding)
+    samples = add_colors(samples, num_data, seed, distinctive)
+    return normalize(samples, size)
+
+
+
+def add_colors(samples: np.ndarray, num_data: int, seed: int, distinctive: int = 10) -> np.ndarray:
     if distinctive > num_data:
         distinctive = num_data
+    rng = np.random.default_rng(seed)
     other_color_idx = rng.choice(num_data, size=distinctive, replace=False).tolist()
     colors = np.array([other_color_idx.index(idx) if idx in other_color_idx else -1 for idx in range(num_data)]).reshape((-1, 1))
     logging.info(other_color_idx)
@@ -58,14 +66,14 @@ def add_colors(samples: np.ndarray, num_data: int, rng: np.random.Generator, dis
 
 
 
-def get_samples(shape: str, rng: np.random.Generator, num_data: int, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
+def get_samples(shape: str, seed: int, num_data: int, bounding: Optional[Tuple] = None, size: Optional[str] = None) -> np.ndarray:
     assert (bounding is None) ^ (size is None)
     if bounding is not None:
         x, y, w, h = bounding
     else:
         x = y = 0
         w, h = list(map(int, size.split('x')))
-
+    rng = np.random.default_rng(seed)
     
     if shape == 'square':
         x_values = rng.uniform(low=x, high=x + w, size=num_data)
@@ -102,11 +110,35 @@ def normalize(samples: np.ndarray, size: str) -> np.ndarray:
     return samples
         
 
-def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position: str, num_data: int, num_labels: int, ratio: float, rng: np.random.Generator, size: str) -> np.ndarray:
+def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position: str, num_data: int, num_labels: int, ratio: float, seed: int, size: str) -> np.ndarray:
     assert 0 <= ratio <= 1
+    if y_position == 'multi':
+        samples = []
+        labels = []
+        for position in ['upper', 'lower']:
+            if position == 'lower' and x_position == 'left':
+                continue
+            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=position, x_position=x_position, num_data=num_data//3, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
+            samples.extend(sub_samples)
+            labels.append(sub_labels)
+        samples = np.stack(samples)
+        labels = np.concatenate(labels)
+        return samples, labels
+    if x_position == 'multi':
+        samples = []
+        labels = []
+        for position in ['left', 'right']:
+            if position == 'left' and y_position == 'lower':
+                continue
+            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=y_position, x_position=position, num_data=num_data//3, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
+            samples.extend(sub_samples)
+            labels.append(sub_labels)
+        samples = np.stack(samples)
+        labels = np.concatenate(labels)
+        return samples, labels
     bounding = get_bounding(y_position, x_position, size, ratio)
-    labels = np.zeros(shape=(num_data))
-    samples = get_samples(shape, rng, num_data, bounding=bounding)
+    labels = np.zeros(shape=(num_data), dtype=int)
+    samples = get_samples(shape, seed, num_data, bounding=bounding)
     samples = normalize(samples, size)
     return samples, labels
    

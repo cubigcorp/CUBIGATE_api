@@ -62,7 +62,7 @@ class Scheduler(ABC):
     def step(self) -> float:
         if self._step_count > self. _T:
             raise Exception(f"Exceeded the number of variation")
-        if self._step_count == 1:
+        if self._step_count == 0:
             self._next = self._last
         else:
             self._next = self._get_next()

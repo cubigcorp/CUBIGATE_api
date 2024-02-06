@@ -6,16 +6,17 @@ def setup_logging(log_file):
         fmt=('%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  '
              '%(message)s'),
         datefmt='%m/%d/%Y %H:%M:%S %p')
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
-    root_logger.addHandler(console_handler)
+    logger.addHandler(console_handler)
 
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(log_formatter)
-    root_logger.addHandler(file_handler)
+    logger.addHandler(file_handler)
 
-    pil_logger = logging.getLogger('PIL')
-    pil_logger.setLevel(logging.INFO)
+    # pil_logger = logging.getLogger('PIL')
+    # pil_logger.setLevel(logging.INFO)
+    return logger

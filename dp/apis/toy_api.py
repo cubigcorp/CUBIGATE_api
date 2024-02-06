@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm.auto import tqdm
 from .api import API
-from dpsda.experiment import get_samples_out_bounding, get_bounding
+from dpsda.experiment import get_samples_out_bounding, get_bounding, get_samples_in_bounding
 
 from typing import Optional, Union
 
@@ -11,8 +11,8 @@ class ToyAPI(API):
                  private_ratio,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.rng = np.random.default_rng(2024)
         self.ratio = private_ratio
+        self.rng = np.random.default_rng(2024)
 
     @staticmethod
     def command_line_parser():
@@ -25,10 +25,11 @@ class ToyAPI(API):
         )
         return parser
 
-    def random_sampling(self, num_samples, size: int, prompts):
-        shape, y_position, x_position = prompts
+    def random_sampling(self, num_samples, size: int, prompts, generator):
+        shape, y_position, x_position = prompts[0].split('_')
         bounding = get_bounding(y_position, x_position, size, self.ratio)
-        samples = get_samples_out_bounding(shape, self.rng, num_samples, bounding, size, self.ratio)
+        # samples = get_samples_out_bounding(shape, self.rng, num_samples, bounding, size)
+        samples = get_samples_in_bounding(shape, 2024, num_samples, bounding, size)
         return_prompts = np.repeat(prompts, num_samples)
 
         return samples, np.array(return_prompts)

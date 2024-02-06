@@ -8,8 +8,7 @@ from multiprocessing import Process
 from dpsda.logging import setup_logging
 from dpsda.data_loader import load_private_data, load_samples, load_public_data, load_count
 from dpsda.feature_extractor import extract_features
-from dpsda.metrics import make_fid_stats
-from dpsda.metrics import compute_metric
+from dpsda.metrics import make_fid_stats, compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool, split_args, split_schedulers_args, slice_scheduler_args
 from apis import get_api_class_from_name
@@ -19,6 +18,7 @@ from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data
 from dpsda.schedulers import get_scheduler_class_from_name
 from dpsda.prompt_generator import PromptGenerator
+from dpsda.data_splitter import hard_split, soft_split
 
 
 
@@ -370,19 +370,7 @@ def parse_args():
         default='1024x1024',
         help='Size of generated images in the format of HxW')
     args, other_args = parser.parse_known_args()
-    if args.epsilon_delta_dp:
-        args.delta = 1 / args.num_samples
-    if args.use_degree_scheduler or args.use_weight_scheduler or args.use_sample_specific_prompt:
-        api_args, scheduler_args, prompt_args = split_args(other_args)
-        if not args.use_degree_scheduler:  # weight scheduler only
-            weight_args = slice_scheduler_args(scheduler_args)
-        elif not args.use_weight_scheduler:  # degree scheduler only 
-            degree_args = slice_scheduler_args(scheduler_args)
-        else:  # both
-            weight_args, degree_args = split_schedulers_args(scheduler_args)
-    else:
-        api_args = other_args
-    live_save_folder = args.result_folder if args.save_samples_live else None
+    
     args.num_samples_schedule = list(map(
         int, args.num_samples_schedule.split(',')))
     if args.direct_variate:
@@ -401,11 +389,30 @@ def parse_args():
         if (len(args.num_samples_schedule) != len(args.variation_degree_schedule)):
             raise ValueError('The length of num_samples_schedule and '
                             'variation_degree_schedule should be the same')
-    T = args.T if args.T > 0 else len(args.num_samples_schedule)
     if args.sample_weight < 1:
         assert args.demonstration > 0
+    
+    return args, other_args
+
+
+def function(args, other_args, all_private_samples, all_private_labels, all_private_features, num_samples) -> str:
+    # Schedulers, prompt generator
+    if args.use_degree_scheduler or args.use_weight_scheduler or args.use_sample_specific_prompt:
+        api_args, scheduler_args, prompt_args = split_args(other_args)
+        if not args.use_degree_scheduler:  # weight scheduler only
+            weight_args = slice_scheduler_args(scheduler_args)
+        elif not args.use_weight_scheduler:  # degree scheduler only 
+            degree_args = slice_scheduler_args(scheduler_args)
+        else:  # both
+            weight_args, degree_args = split_schedulers_args(scheduler_args)
+    else:
+        api_args = other_args
+    # API
     api_class = get_api_class_from_name(args.api)
+    live_save_folder = args.result_folder if args.save_samples_live else None
     api = api_class.from_command_line_args(api_args, live_save_folder, args.live_loading_target, args.save_samples_live_freq, args.modality)
+    # Schedulers
+    T = args.T if args.T > 0 else len(args.num_samples_schedule)
     if args.use_degree_scheduler:
         degree_scheduler_class = get_scheduler_class_from_name(args.degree_scheduler)
         degree_scheduler = degree_scheduler_class.from_command_line_args(args=degree_args, T=T)
@@ -417,11 +424,17 @@ def parse_args():
         weight_scheduler = weight_scheduler_class.from_command_line_args(args=weight_args, T=T)
     else:
         weight_scheduler =None
-    return args, api, degree_scheduler, weight_scheduler, prompt_args
 
+    if args.epsilon_delta_dp:
+        args.delta = 1 / num_samples
 
-def main():
-    args, api, degree_scheduler, weight_scheduler, prompt_args = parse_args()
+    private_classes = list(map(int, sorted(set(list(all_private_labels)))))
+    private_num_classes = len(private_classes)
+    logging.info(f'Private_num_classes: {private_num_classes}')
+
+    metric = "FID" if args.num_private_samples > 2048 else "KID"
+    rng = np.random.default_rng(args.random_seed)
+    
     config = dict(vars(args), **vars(api.args))
     if args.use_degree_scheduler:
         config.update(**vars(degree_scheduler.args))
@@ -436,11 +449,9 @@ def main():
         dir=args.wandb_log_dir,
         id=args.wandb_resume_id
     )
-    args.result_folder = f'{args.result_folder}/{wandb.run.name}'
-    if not os.path.exists(args.result_folder):
-        os.makedirs(args.result_folder)
-    log_file = os.path.join(args.result_folder, 'log.log')
-    setup_logging(log_file)
+    run_folder = f'{args.result_folder}/{wandb.run.name}'
+    if not os.path.exists(run_folder):
+        os.makedirs(run_folder)
     if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
         logging.info("You set it non-dp. Privacy parameters are ignored.")
         args.direct_variate = True
@@ -452,83 +463,10 @@ def main():
         args.use_public_data = False
         args.modality = 'toy'
         args.feature_extractor = ''
-        args.initial_prompt = args.toy_data_type
+        args.save_each_sample = False
         
     logging.info(f'config: {args}')
     logging.info(f'API config: {api.args}')
-    
-
-    metric = "FID" if args.num_private_samples > 2048 else "KID"
-    rng = np.random.default_rng(args.random_seed)
- 
-    # 기존 private 한쪽에만 생기는 코드
-    # if args.experimental:
-    #     all_private_samples, all_private_labels = get_toy_data(
-    #         shape=args.toy_data_type[0],
-    #         y_position=args.toy_data_type[1],
-    #         x_position=args.toy_data_type[2],
-    #         num_data=args.num_private_samples,
-    #         ratio=args.toy_private_bounding_ratio,
-    #         num_labels=1,
-    #         size=args.sample_size,
-    #         rng=rng
-    #     )
-    #     all_private_features = all_private_samples[:, :2]
-    
-    
-    # private이 3곳에서 생기는 코드
-    if args.experimental:
-        # 여러 위치 설정
-        positions = [('upper', 'left'), ('upper', 'right'), ('lower', 'right')]
-        all_private_samples_list = []
-        all_private_labels_list = []
-
-        # 각 위치에 대한 데이터 생성 및 결합
-        for y_pos, x_pos in positions:
-            private_samples, private_labels = get_toy_data(
-                shape=args.toy_data_type[0],
-                y_position=y_pos,
-                x_position=x_pos,
-                num_data=args.num_private_samples // len(positions), # 전체 데이터 개수를 위치 수로 나누어 각 위치에 균등하게 할당
-                ratio=args.toy_private_bounding_ratio,
-                num_labels=1,
-                size=args.sample_size,
-                rng=rng
-            )
-            all_private_samples_list.append(private_samples)
-            all_private_labels_list.append(private_labels)
-
-        # 리스트에 저장된 모든 샘플과 레이블을 하나의 배열로 결합
-        all_private_samples = np.vstack(all_private_samples_list)
-        all_private_labels = np.concatenate(all_private_labels_list)
-
-        # 특징(좌표) 추출
-        all_private_features = all_private_samples[:, :2]
-    else:
-        all_private_samples, all_private_labels = load_private_data(
-            data_dir=args.data_folder,
-            batch_size=args.data_loading_batch_size,
-            sample_size=args.private_sample_size,
-            class_cond=args.gen_class_cond,
-            num_private_samples=args.num_private_samples,
-            modality=args.modality,
-            model=args.feature_extractor)
-        logging.info('Extracting features')
-        all_private_features = extract_features(
-            data=all_private_samples,
-            tmp_folder=args.tmp_folder,
-            model_name=args.feature_extractor,
-            res=args.private_sample_size,
-            batch_size=args.feature_extractor_batch_size,
-            device=f'cuda:{args.device}',
-            use_dataparallel=False,
-            modality=args.modality)
-    logging.info(f'all_private_features.shape: {all_private_features.shape}')
-
-    private_classes = list(map(int, sorted(set(list(all_private_labels)))))
-    private_num_classes = len(private_classes)
-    logging.info(f'Private_num_classes: {private_num_classes}')
-
 
     if args.make_fid_stats:
         logging.info(f'Computing {metric} stats')
@@ -543,7 +481,7 @@ def main():
             modality=args.modality,
             metric=metric)
 
-    num_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
+    
     num_samples_per_class = num_samples // private_num_classes
     synthetic_labels = np.repeat(private_classes, num_samples_per_class)
 
@@ -590,7 +528,9 @@ def main():
             logging.info(f"Generated initial samples: {len(samples)}")
             if args.modality == 'text':
                 tokens = [tokenize(args.feature_extractor, sample) for sample in samples]
-                tokens = np.array(packed_tokens)
+                tokens = np.array(tokens)
+            elif args.modality == 'toy':
+                tokens = samples[:, :2]
             else:
                 tokens = samples
             tsne_p = Process(target=t_sne, kwargs={
@@ -599,23 +539,22 @@ def main():
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': 0,
-                'dir': args.result_folder
+                'dir': run_folder
             })
             tsne_p.start()
             if args.modality == 'image':
                 visualize(
                     samples=samples[:100],
                     count=np.arange(len(samples)),
-                    folder=args.result_folder,
+                    folder=run_folder,
                     suffix='first_100',
                     t=0)
-            if not args.experimental:
-                log_samples(
-                    samples=samples,
-                    additional_info=additional_info,
-                    folder=f'{args.result_folder}/{0}',
-                    save_each_sample=args.save_each_sample,
-                    modality=args.modality)
+            log_samples(
+                samples=samples,
+                additional_info=additional_info,
+                folder=f'{run_folder}/{0}',
+                save_each_sample=args.save_each_sample,
+                modality=args.modality)
             if args.data_checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step'),
             start_t = 1
@@ -623,9 +562,8 @@ def main():
         if args.experimental:
             log_plot(private_samples=all_private_samples,
                      synthetic_samples=samples, 
-                     size=args.sample_size,
                      step=0,
-                     dir=args.result_folder,)
+                     dir=run_folder,)
     
     
     if args.compute_fid:
@@ -648,7 +586,7 @@ def main():
             modality=args.modality,
             metric=metric)
         logging.info(f'{metric}={fid}')
-        log_fid(args.result_folder, fid, 0)
+        log_fid(run_folder, fid, 0)
         wandb.log({f'{metric}': fid})
 
     T = len(args.num_samples_schedule) if args.T == 0 else args.T + 1
@@ -706,7 +644,7 @@ def main():
                     sub_counts_idx = np.tile(sub_counts_sorted_idx, (len(sub_counts_sorted_idx), 1))
                     sub_row_idx, sub_col_idx = np.indices(sub_counts_idx.shape)
                     sub_counts_idx[sub_col_idx >= sub_row_idx] = -1
-                    sub_p = np.array([sub_count[idx] if idx >= 0 else 0 for idx in sub_counts_idx.flat]).reshape((args.num_samples, args.num_samples))
+                    sub_p = np.array([sub_count[idx] if idx >= 0 else 0 for idx in sub_counts_idx.flat]).reshape((num_samples, num_samples))
                     with np.errstate(divide='ignore', invalid='ignore'):
                         sub_p = np.nan_to_num(sub_p / np.sum(sub_p, axis=1).reshape((-1, 1)))
                     # Sampling demonstrations' index
@@ -813,7 +751,7 @@ def main():
                     num_candidate=num_candidate,
                     rng=rng,
                     device=args.device,
-                    dir=args.result_folder,
+                    dir=run_folder,
                     step = t)
             else:
                 sub_count, sub_losers, sub_1st_idx = nn_histogram(
@@ -834,7 +772,7 @@ def main():
         count_1st_idx = np.concatenate(count_1st_idx)
         
         logging.info('Generating new indices')
-        if args.num_samples == 0:
+        if num_samples == 0:
             assert args.num_samples_schedule[t] % private_num_classes == 0
             new_num_samples_per_class = (
                 args.num_samples_schedule[t] // private_num_classes)
@@ -843,13 +781,13 @@ def main():
 
         if args.direct_variate:
             logging.info(f"Selected candidates: {count_1st_idx}")
-            new_new_samples = packed_samples[np.arange(args.num_samples), count_1st_idx]
+            new_new_samples = packed_samples[np.arange(num_samples), count_1st_idx]
             new_new_additional_info = additional_info
             log_count(
                 count,
                 None,
                 losers,
-                f'{args.result_folder}/{t}/count.npz')
+                f'{run_folder}/{t}/count.npz')
         else:
             new_indices = []
             for class_i in private_classes:
@@ -900,15 +838,17 @@ def main():
                 device=f'cuda:{args.device}',
                 metric=metric)
             logging.info(f'fid={new_new_fid}')
-            log_fid(args.result_folder, new_new_fid, t)
+            log_fid(run_folder, new_new_fid, t)
 
         tsne_p.join()
-        wandb.log({'t-SNE': wandb.Image(f'{args.result_folder}/{t-1}_t-SNE.png'), 't': t-1})
+        wandb.log({'t-SNE': wandb.Image(f'{run_folder}/{t-1}_t-SNE.png'), 't': t-1})
         samples = new_new_samples
         additional_info = new_new_additional_info
         if args.modality == 'text':
                 tokens = [tokenize(args.feature_extractor, sample) for sample in samples]
                 tokens = np.array(packed_tokens)
+        elif args.modality == 'toy':
+                tokens = samples[:, :2]
         else:
             tokens = samples
         tsne_p = Process(target=t_sne, kwargs={
@@ -917,7 +857,7 @@ def main():
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': t,
-                'dir': args.result_folder
+                'dir': run_folder
             })
         tsne_p.start()
         if args.modality == 'image':
@@ -932,7 +872,7 @@ def main():
                     count=count[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
-                    folder=args.result_folder,
+                    folder=run_folder,
                     t=t,
                     suffix=f'class{class_}')
                 visualize(
@@ -942,34 +882,125 @@ def main():
                     count=count[
                         num_samples_per_class_w_candidate * class_i:
                         num_samples_per_class_w_candidate * (class_i + 1)],
-                    folder=args.result_folder,
+                    folder=run_folder,
                     t=t,
                     suffix=f'class{class_}')
         if args.experimental:
             log_plot(private_samples=all_private_samples,
                      synthetic_samples=samples, 
-                     size=args.sample_size,
                      step=t,
-                     dir=args.result_folder)
+                     dir=run_folder)
     
-        else:
-            log_samples(
-                samples=samples,
-                additional_info=additional_info,
-                folder=f'{args.result_folder}/{t}',
-                save_each_sample=args.save_each_sample,
-                modality=args.modality)
+        log_samples(
+            samples=samples,
+            additional_info=additional_info,
+            folder=f'{run_folder}/{t}',
+            save_each_sample=args.save_each_sample,
+            modality=args.modality)
         if args.dp:
             eps = get_epsilon(args.epsilon, t)
             logging.info(f"Privacy cost so far: {eps:.2f}")
             wandb.log({"epsilon": eps, "t": t})
 
-    artifact = wandb.Artifact(name="log", type="dataset")
-    artifact.add_file(local_path=log_file, name=wandb.run.name)
-    wandb.log_artifact(artifact)
-    os.remove(log_file)
+    
     tsne_p.join()
-    wandb.log({'t-SNE': wandb.Image(f'{args.result_folder}/{args.T}_t-SNE.png'), 't': args.T})
+    wandb.log({'t-SNE': wandb.Image(f'{run_folder}/{args.T}_t-SNE.png'), 't': args.T})
+    wandb.finish()
+    return f'{run_folder}/{args.T}/_samples.npz'
+
+
+def main():    
+    args, other_args = parse_args()
+    os.environ["WANDB_RUN_GROUP"] = "experiment-" + wandb.util.generate_id()
+    args.result_folder = f'{args.result_folder}/{os.environ["WANDB_RUN_GROUP"]}'
+    if not os.path.exists(args.result_folder):
+        os.makedirs(args.result_folder)
+    log_file = os.path.join(args.result_folder, 'log.log')
+    setup_logging(log_file)
+
+    if args.experimental:
+        all_private_samples, all_private_labels = get_toy_data(
+            shape=args.toy_data_type[0],
+            y_position=args.toy_data_type[1],
+            x_position=args.toy_data_type[2],
+            num_data=args.num_private_samples,
+            ratio=args.toy_private_bounding_ratio,
+            num_labels=1,
+            size=args.sample_size,
+            seed=args.random_seed
+        )
+        all_private_features = all_private_samples[:, :2]
+
+    else:
+        all_private_samples, all_private_labels = load_private_data(
+            data_dir=args.data_folder,
+            batch_size=args.data_loading_batch_size,
+            sample_size=args.private_sample_size,
+            class_cond=args.gen_class_cond,
+            num_private_samples=args.num_private_samples,
+            modality=args.modality,
+            model=args.feature_extractor)
+        logging.info('Extracting features')
+        all_private_features = extract_features(
+            data=all_private_samples,
+            tmp_folder=args.tmp_folder,
+            model_name=args.feature_extractor,
+            res=args.private_sample_size,
+            batch_size=args.feature_extractor_batch_size,
+            device=f'cuda:{args.device}',
+            use_dataparallel=False,
+            modality=args.modality)
+    logging.info(f'all_private_features.shape: {all_private_features.shape}')
+
+    # Clustering
+    all_private_sub_labels = soft_split(X=all_private_samples, n_cluster=3)
+    private_sub_labels = list(map(int, sorted(set(list(all_private_sub_labels)))))
+
+    all_synthetic_samples = []
+    additional_info = []
+    total_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
+    accum_samples = 0
+    for i, sub_label in enumerate(private_sub_labels):
+        indices = all_private_sub_labels == sub_label
+        # 딱 떨어지지 않는 경우 마지막에 더 만들어줌
+        if i == len(private_sub_labels) - 1:
+            num_samples = total_samples - accum_samples
+        else:
+            portion = len(indices) / args.num_private_samples
+            num_samples = int(np.ceil(total_samples * portion))
+            accum_samples += num_samples
+        logging.info(f"{i+1}th sub-label's private_samples: {len(indices)}")
+        logging.info(f'Num synthetic samples: {num_samples}')
+        path = function(args=args,
+                 other_args=other_args,
+                 all_private_samples=all_private_samples[indices],
+                 all_private_labels=all_private_labels[indices],
+                 all_private_features=all_private_features[indices],
+                 num_samples=num_samples)
+        sub_synthetic_samples, sub_additional_info = load_samples(path)
+        logging.info(f'{i+1}th sub-labels samples: {sub_synthetic_samples.shape}')
+        all_synthetic_samples.append(sub_synthetic_samples)
+        additional_info.extend(sub_additional_info)
+    all_synthetic_samples = np.concatenate(all_synthetic_samples)
+    additional_info = np.array(additional_info)
+    log_samples(
+        samples=all_synthetic_samples,
+        folder=args.result_folder,
+        save_each_sample=args.save_each_sample,
+        modality=args.modality,
+        additional_info=additional_info,
+        save_npz=True
+    )
+    if args.experimental:
+        log_plot(private_samples=all_private_samples, synthetic_samples=all_synthetic_samples, dir=args.result_folder)
+    
+    # artifact = wandb.Artifact(name="log", type="dataset")
+    # artifact.add_file(local_path=log_file, name=os.environ["WANDB_RUN_GROUP"])
+    # wandb.log_artifact(artifact)
+    # os.remove(log_file)
+
+    
+
 
 if __name__ == '__main__':
     main()

@@ -120,7 +120,7 @@ def visualize(samples: np.ndarray,count: np.ndarray, folder: str, t: int,
 
 
 
-def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: str, step: int, dir: str, margin: int = 0.05) -> None:
+def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, dir: str, step: int = -1, margin: int = 0.05) -> None:
     COLORS = {-1: 'blue', 0: 'green', 1: 'yellow', 2: 'purple', 3: 'teal', 4: 'olive', 
           5: 'peru', 6: 'crimson', 7: 'orange', 8: 'black', 9: 'darkgreen'}
 
@@ -151,8 +151,10 @@ def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, size: s
     plt.xlim(-1, 1)
     plt.ylim(-1, 1)
     plt.savefig(os.path.join(dir, f"{step}_plot.png"))
-    wandb.log({"syn_in_prv": syn_in_prv, 't': step})
-    wandb.log({'plot' : wandb.Image(fig), 't': step})
+    if step >= 0:
+        wandb.log({"syn_in_prv": syn_in_prv, 't': step})
+        wandb.log({'plot' : wandb.Image(fig), 't': step})
+    plt.close()
 
 
 
@@ -183,4 +185,5 @@ def t_sne(private_samples: np.ndarray, synthetic_samples: np.ndarray,
     plt.legend()
     plt.title(f't-SNE at step {t}')
     plt.savefig(f"{dir}/{t}_t-SNE.png")
+    plt.close()
     
