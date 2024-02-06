@@ -7,6 +7,7 @@ from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image
 from apis.adapter.ip_adapter import IPAdapter
 from typing import Optional, Union, List
 from dpsda.prompt_generator import PromptGenerator
+from diffusers.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
 import warnings
 warnings.filterwarnings("ignore", message=r"Passing", category=FutureWarning)
 
@@ -211,12 +212,13 @@ class StableDiffusionAPI(API):
             raise ValueError('variation_degree should be between 0 and 1')
         width, height = list(map(int, size.split('x')))
         variations = []
-        max_batch_size = 1 if 'turbo' in self._variation_checkpoint else self._variation_batch_size
+        max_batch_size = 1 if ('turbo' in self._variation_checkpoint) or (isinstance(variation_degree, np.ndarray)) else self._variation_batch_size
         prompts = list(additional_info)
         if demo_samples is None:
             num_less_demo = 0
         else:
-            out = self._get_weights_images(prompts=prompts, demo_samples=demo_samples, demo_weights=demo_weights)
+            negative = "worst quality, low quality, illustration, 3d, 2d, painting"
+            out = self._get_weights_images(prompts=prompts, negative_prompts=negative, demo_samples=demo_samples, demo_weights=demo_weights)
             num_less_demo = demo_samples.shape[1]
             # max_batch_size = self._variation_batch_size // (demo_samples.shape[1] + 1)
         num_iterations = int(np.ceil(
@@ -243,16 +245,18 @@ class StableDiffusionAPI(API):
                 inference_steps = int(np.ceil(self._variation_num_inference_steps / degree))
             if demo_samples is not None:
                 pos_embeds, neg_embeds, pooled_pos_embeds, pooled_neg_embeds = zip(*out[start_idx:end_idx])
-                pos_embeds, pooled_pos_embeds = tuple_into_tensor((pos_embeds, pooled_pos_embeds))
+                pos_embeds, neg_embeds, pooled_pos_embeds, pooled_neg_embeds = tuple_into_tensor((pos_embeds, neg_embeds, pooled_pos_embeds, pooled_neg_embeds))
                 image = self._variation_pipe(
                     image=samples[start_idx:end_idx],
                     prompt_embeds=pos_embeds,
+                    negative_prompt_embeds=neg_embeds,
                     pooled_prompt_embeds=pooled_pos_embeds,
+                    negative_pooled_prompt_embeds=pooled_neg_embeds,
                     width=width,
                     height=height,
                     strength=degree,
                     guidance_scale=self._variation_guidance_scale,
-                    num_inference_steps=inference_steps,
+                    num_inference_steps=self._variation_num_inference_steps,
                     num_images_per_prompt=num_variations_per_sample,
                     output_type='np'
                 ).images
@@ -301,7 +305,8 @@ class StableDiffusionAPI(API):
     def _get_weights_images(self,
                              prompts: np.ndarray,
                              demo_samples: np.ndarray,
-                             demo_weights: np.ndarray):
+                             demo_weights: np.ndarray,
+                             negative_prompts: Optional[str] = None):
         out = []
         for idx in range(len(demo_samples)):
             if idx < demo_samples.shape[1]:
@@ -310,7 +315,7 @@ class StableDiffusionAPI(API):
             else:
                 target_images = demo_samples[idx]
                 target_weights = demo_weights[idx]
-            out.append(self._variation_API.get_prompt_embeds(images=target_images, prompt=prompts[idx], weight=target_weights))
+            out.append(self._variation_API.get_prompt_embeds(images=target_images, prompt=prompts[idx], negative_prompt=negative_prompts, weight=target_weights))
         
         return out
 
