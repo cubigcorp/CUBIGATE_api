@@ -1,5 +1,6 @@
 docker
 models
+dp/apis/adapter
 checkpoints
 lora
 logs
