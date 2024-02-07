@@ -34,14 +34,14 @@ def train(epsilon: float, delta: float, iterations: int):
         return 'Training Started'
     else:
         r = r.json()
-        return r['errors'][0]['message']
+        return f"ERROR: {r['errors'][0]['message']}"
 
 def check_status(service: str):
     global headers
     r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/{service}/status', headers=headers)
     if r.status_code != 200:
         r = r.json()
-        return r['errors'][0]['message']
+        return f"ERROR: {r['errors'][0]['message']}"
     r = r.json()
     if service == 'generate':
         if r['service_status'] in ['TRAINING', 'RUNNING']:
@@ -78,10 +78,13 @@ def gen_status():
 def download():
     global headers
     r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/generate/download', headers=headers, stream=True)
+    if r.status_code != 200:
+        r = r.json()
+        return None, f"ERROR: {r['errors'][0]['message']}"
     with open(f'{result_path}/generated.zip', 'wb') as f:
         for chunk in r.iter_content(chunk_size=128):
             f.write(chunk)
-    return f'{result_path}/generated.zip'
+    return f'{result_path}/generated.zip', None
 
 
 def generate():
@@ -89,7 +92,7 @@ def generate():
     r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate', headers=headers)
     if r.status_code != 200:
         r = r.json()
-        return r['errors'][0]['message']
+        return f"ERROR: {r['errors'][0]['message']}"
     else:
         return 'Generation Started.'
 
@@ -121,9 +124,9 @@ with g.Blocks(css="footer{display:none !important}") as console:
             )
             down_btn = g.Button("Download")
             down_btn.click(
-                fn=download, outputs=g.File()
+                fn=download, outputs=[g.File(), g.Markdown()]
             )
     
 
-# console.launch(server_name="0.0.0.0", server_port=30005)
-console.launch()
+console.launch(server_name="0.0.0.0", server_port=30005)
+# console.launch()
