@@ -28,19 +28,28 @@ def train(epsilon: float, delta: float, iterations: int):
         "epsilon": epsilon,
         "delta": delta
     }
-    r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/train', json=train_config, headers=headers).json()
+    r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/train', json=train_config, headers=headers)
 
-    # 이미 진행 중인 학습이 있을 경우 오류 발생
-    if 'errors' in r.keys():
-        return f"ERROR: {r['errors'][0]['message']}"
-    elif r['message'] == 'success':
+    if r.status_code == 200:
         return 'Training Started'
     else:
-        return str(r)
+        r = r.json()
+        return r['errors'][0]['message']
 
 def check_status(service: str):
     global headers
-    r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/{service}/status', headers=headers).json()
+    r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/{service}/status', headers=headers)
+    if r.status_code != 200:
+        r = r.json()
+        return r['errors'][0]['message']
+    r = r.json()
+    if service == 'generate':
+        if r['service_status'] in ['TRAINING', 'RUNNING']:
+            return ": Training in under way."
+        elif r['service_status'] == 'WAITING':
+            return "not started yet."
+        elif r['service_status'] == 'FINISHED':
+            return "already done."
     if r['job_status']['status'] == "SUCCESS":
         return "done."
         
@@ -77,11 +86,11 @@ def download():
 
 def generate():
     global headers
-    r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate', headers=headers).json()
-    # 이미 진행 중인 학습이 있을 경우 오류 발생
-    if 'errors' in r.keys():
+    r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate', headers=headers)
+    if r.status_code != 200:
+        r = r.json()
         return r['errors'][0]['message']
-    elif r['message'] == 'success':
+    else:
         return 'Generation Started.'
 
 with g.Blocks(css="footer{display:none !important}") as console:
@@ -116,4 +125,5 @@ with g.Blocks(css="footer{display:none !important}") as console:
             )
     
 
-console.launch(server_name="0.0.0.0", server_port=30005)
+# console.launch(server_name="0.0.0.0", server_port=30005)
+console.launch()
