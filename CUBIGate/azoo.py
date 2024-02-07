@@ -4,7 +4,7 @@ import io
 import sys
 import time
 
-url = "http://203.255.176.55:30004"
+url = "http://223.130.131.19:30004"
 
 # API 접근을 위한 인증 과정
 auth = {
@@ -34,18 +34,20 @@ train_job_id = r['job_id']
 
 print(f"Starting training with job ID: {train_job_id}")
 # 상태 확인
-def check_status(job_id: str):
+def check_status(service):
     while True:
-        r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/status?job_id={job_id}', headers=headers).json()
-        if r['status'] == "SUCCESS":
+        r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/{service}/status', headers=headers).json()
+        if r['job_status']['status'] == "SUCCESS":
             print("It's done.")
-            output = eval(r['output'])
+            output = eval(r['job_status']['output'])
             return output['result']
             
-        elif r['status'] == 'EXECUTING':
+        elif r['job_status']['status'] == 'EXECUTING':
             print("It's running.")
-        elif r['status'] == "PENDING":
+        elif r['job_status']['status'] == "PENDING":
             print("It's waiting.")
+        elif r['job_status']['status'] == 'FAILED':
+            print('It failed')
         else:
             print("Something went wrong.")
             print(r['details'])
@@ -53,16 +55,16 @@ def check_status(job_id: str):
         time.sleep(10)
 
 
-base = check_status(train_job_id)['file_path']
+base = check_status('train')['file_path']
 
 
 # 생성
-gen_job_id = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate?checkpoint_path={base}', headers=headers).json()['job_id']
+gen_job_id = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate', headers=headers).json()['job_id']
 print(f"Generating images with job ID: {gen_job_id}")
 
-result = check_status(gen_job_id)
+result = check_status('generate')
 
 # 저장
-r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/generate/download?job_id={gen_job_id}', headers=headers)
+r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/generate/download', headers=headers)
 z = zipfile.ZipFile(io.BytesIO(r.content))
 z.extractall("./result/cookie/gen")
