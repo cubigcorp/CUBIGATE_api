@@ -32,7 +32,7 @@ def train(epsilon: float, delta: float, iterations: int):
 
     # 이미 진행 중인 학습이 있을 경우 오류 발생
     if 'errors' in r.keys():
-        return r['errors'][0]['message']
+        return f"ERROR: {r['errors'][0]['message']}"
     elif r['message'] == 'success':
         return 'Training Started'
     else:
@@ -84,7 +84,7 @@ def generate():
     elif r['message'] == 'success':
         return 'Generation Started.'
 
-with g.Blocks() as console:
+with g.Blocks(css="footer{display:none !important}") as console:
     g.Button(value="Authenticate").click(fn=authen, outputs=[g.Markdown()])
     with g.Row(equal_height=True):
         with g.Column():
