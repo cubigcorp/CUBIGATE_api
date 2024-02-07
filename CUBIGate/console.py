@@ -90,7 +90,7 @@ with g.Blocks() as console:
         with g.Column():
             epsilon = g.Number(label="Epsilon", minimum=0, value=1.0)
             delta = g.Number(label='Delta', minimum=0, value=0.01)
-            iteration = g.Slider(label='Iteration', minimum=2, maximum=25, value=2)
+            iteration = g.Slider(label='Iteration', minimum=2, maximum=20, value=2)
             train_out = g.Markdown()
             train_btn = g.Button("Train")
             train_btn.click(
