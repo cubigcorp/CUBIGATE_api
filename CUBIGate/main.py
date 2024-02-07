@@ -76,9 +76,11 @@ def on_message_callback_train(ch, method, properties, body):
         data = body.decode()
         data=json.loads(data)
         job_id = data['job_id']
+        user_id = data['user_id']
+        service_id = data['service_id']
         
-        service_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
-        if service_status['status'] == 'SUCCESS' or service_status['status'] == 'FAILED':
+        job_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
+        if job_status['status'] == 'SUCCESS' or job_status['status'] == 'FAILED':
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -104,11 +106,17 @@ def on_message_callback_train(ch, method, properties, body):
         result_str = json.dumps(result)
         # Update job status to success
         db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+        db_connector.execute_query('user_service_update_status', params=[user_id, service_id, 'RUNNING'])
+        
+        # Update generate service to waiting
+        db_connector.execute_query('user_service_update_status', params=[user_id, 2, 'WAITING'])
+        
         #ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
+        db_connector.execute_query('user_service_update_status', params=[user_id, service_id, 'ERROR'])
     finally:
         logging.info(f" [x] Done")
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -120,9 +128,11 @@ def on_message_callback_generate(ch, method, properties, body):
         data = body.decode()
         data=json.loads(data)
         job_id = data['job_id']
+        user_id = data['user_id']
+        service_id = data['service_id']
         
-        service_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
-        if service_status['status'] == 'SUCCESS' or service_status['status'] == 'FAILED':
+        job_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
+        if job_status['status'] == 'SUCCESS' or job_status['status'] == 'FAILED':
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -134,6 +144,7 @@ def on_message_callback_generate(ch, method, properties, body):
         
         # Update job status to executing
         db_connector.execute_query('service_request_update', params=[job_id, 'EXECUTING', empty_json_str, ''], fetch_all=False)
+        
         
         file_name = generate_dp_data(data['checkpoint_path']).filename
         
@@ -147,11 +158,13 @@ def on_message_callback_generate(ch, method, properties, body):
         result_str = json.dumps(result)
         # Update job status to success
         db_connector.execute_query('service_request_update', params=[job_id, 'SUCCESS', result_str, ''], fetch_all=False)
+        db_connector.execute_query('user_service_update_status', params=[user_id, service_id, 'FINISHED'])
         #ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         # Update job status to error
         db_connector.execute_query('service_request_update', params=[job_id, 'FAILED', empty_json_str, str(e)], fetch_all=False)
+        db_connector.execute_query('user_service_update_status', params=[user_id, service_id, 'ERROR'])
     finally:
         logging.info(f" [x] Done")
         ch.basic_ack(delivery_tag=method.delivery_tag)
