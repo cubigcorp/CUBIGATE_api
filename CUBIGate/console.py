@@ -1,5 +1,7 @@
 import gradio as g
 import requests
+import zipfile
+import io
 
 url = "http://223.130.131.19:30004"
 # API 접근을 위한 인증 과정
@@ -29,9 +31,12 @@ def train(epsilon: float, delta: float, iterations: int):
         "delta": delta
     }
     r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/train', json=train_config, headers=headers)
-
-    if r.status_code == 200:
+    if r.status_code == 403:
+        r = r.json()
+        return r['detail']
+    elif r.status_code == 200:
         return 'Training Started'
+
     else:
         r = r.json()
         return f"ERROR: {r['errors'][0]['message']}"
@@ -39,7 +44,10 @@ def train(epsilon: float, delta: float, iterations: int):
 def check_status(service: str):
     global headers
     r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/{service}/status', headers=headers)
-    if r.status_code != 200:
+    if r.status_code == 403:
+        r = r.json()
+        return r['detail']
+    elif r.status_code != 200:
         r = r.json()
         return f"ERROR: {r['errors'][0]['message']}"
     r = r.json()
@@ -78,18 +86,28 @@ def gen_status():
 def download():
     global headers
     r = requests.get(url=f'{url}/api/v1/service_requests/dp_msv/generate/download', headers=headers, stream=True)
-    if r.status_code != 200:
+    if r.status_code == 403:
+        r = r.json()
+        return None, r['detail']
+    elif r.status_code != 200:
         r = r.json()
         return None, f"ERROR: {r['errors'][0]['message']}"
-    with open(f'{result_path}/generated.zip', 'wb') as f:
+
+    name = zipfile.ZipFile(io.BytesIO(r.content)).namelist()[0].split('/')[1]
+    print(name)
+
+    with open(f'{result_path}/{name}.zip', 'wb') as f:
         for chunk in r.iter_content(chunk_size=128):
             f.write(chunk)
-    return f'{result_path}/generated.zip', None
+    return f'{result_path}/{name}.zip', None
 
 
 def generate():
     global headers
     r = requests.post(url=f'{url}/api/v1/service_requests/dp_msv/generate', headers=headers)
+    if r.status_code == 403:
+        r = r.json()
+        return r['detail']
     if r.status_code != 200:
         r = r.json()
         return f"ERROR: {r['errors'][0]['message']}"
@@ -129,4 +147,3 @@ with g.Blocks(css="footer{display:none !important}") as console:
     
 
 console.launch(server_name="0.0.0.0", server_port=30005)
-# console.launch()
