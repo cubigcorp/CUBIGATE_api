@@ -23,7 +23,7 @@ def authen():
     return "Authenticated"
 
 
-def train(epsilon: float, delta: float, iterations: int):
+def train(dataset: str, epsilon: float, delta: float, iterations: int):
     global headers
     train_config = {
         "iterations": iterations,
@@ -118,13 +118,14 @@ with g.Blocks(css="footer{display:none !important}") as console:
     g.Button(value="Authenticate").click(fn=authen, outputs=[g.Markdown()])
     with g.Row(equal_height=True):
         with g.Column():
+            dataset = g.Dropdown(choices=['cookie'], value='cookie', label='Dataset')
             epsilon = g.Number(label="Epsilon", minimum=0, value=1.0)
             delta = g.Number(label='Delta', minimum=0, value=0.01)
             iteration = g.Slider(label='Iteration', minimum=2, maximum=20, value=2, step=1)
             train_out = g.Markdown()
             train_btn = g.Button("Train")
             train_btn.click(
-                fn=train, inputs=[epsilon, delta, iteration], outputs=[train_out] 
+                fn=train, inputs=[dataset, epsilon, delta, iteration], outputs=[train_out] 
             )
             train_status_btn = g.Button("Check Train Status")
             train_status_btn.click(
