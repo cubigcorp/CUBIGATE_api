@@ -93,6 +93,10 @@ def parse_args():
 
     ours_group = parser.add_argument_group("Ours")
     ours_group.add_argument(
+        '--num_sub_labels_per_class',
+        type=str
+    )
+    ours_group.add_argument(
         '--use_weight_scheduler',
         type=str2bool,
         default=False
@@ -181,6 +185,11 @@ def parse_args():
         type=str2bool,
         default=True,
         help='Whether to save generated images in PNG files')  #False
+    general.add_argument(
+        '--checkpoint_sub_label',
+        type=int,
+        default=-1
+    )
     general.add_argument(
         '--data_checkpoint_path',
         type=str,
@@ -391,11 +400,13 @@ def parse_args():
                             'variation_degree_schedule should be the same')
     if args.sample_weight < 1:
         assert args.demonstration > 0
+
+    args.num_sub_labels_per_class = list(map(int, args.num_sub_labels_per_class.split(',')))
     
     return args, other_args
 
 
-def function(args, other_args, all_private_samples, all_private_labels, all_private_features, num_samples) -> str:
+def function(args, other_args, all_private_samples, all_private_labels, all_private_features, num_samples, sub_label) -> str:
     # Schedulers, prompt generator
     if args.use_degree_scheduler or args.use_weight_scheduler or args.use_sample_specific_prompt:
         api_args, scheduler_args, prompt_args = split_args(other_args)
@@ -449,7 +460,7 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
         dir=args.wandb_log_dir,
         id=args.wandb_resume_id
     )
-    run_folder = f'{args.result_folder}/{wandb.run.name}'
+    run_folder = f'{args.result_folder}/{sub_label}_{wandb.run.name}'
     if not os.path.exists(run_folder):
         os.makedirs(run_folder)
     if (not args.dp) and ((args.epsilon > 0) or (args.noise_multiplier > 0) or (args.direct_variate)) :
@@ -513,7 +524,7 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
         else:
             if args.use_sample_specific_prompt:
                 generator = PromptGenerator(args.initial_prompt[0], prompt_args, rng)
-                generator.generate(5)
+                generator.generate(num_samples)
                 wandb.config.update(generator.tag_prompts)
                 prompts = None
             else:
@@ -909,7 +920,7 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
     return f'{run_folder}/{args.T}/_samples.npz'
 
 
-def main():    
+def main(super_label: int):    
     args, other_args = parse_args()
     os.environ["WANDB_RUN_GROUP"] = "experiment-" + wandb.util.generate_id()
     args.result_folder = f'{args.result_folder}/{os.environ["WANDB_RUN_GROUP"]}'
@@ -917,6 +928,8 @@ def main():
         os.makedirs(args.result_folder)
     log_file = os.path.join(args.result_folder, 'log.log')
     setup_logging(log_file)
+    num_sub_labels = args.num_sub_labels_per_class[super_label]
+    logging.info(f'{os.environ["WANDB_RUN_GROUP"]} started')
 
     if args.experimental:
         all_private_samples, all_private_labels = get_toy_data(
@@ -953,30 +966,34 @@ def main():
     logging.info(f'all_private_features.shape: {all_private_features.shape}')
 
     # Clustering
-    all_private_sub_labels = soft_split(X=all_private_samples, n_cluster=3)
+    all_private_sub_labels = soft_split(X=all_private_features, num_sub_label=num_sub_labels, folder=args.result_folder)
     private_sub_labels = list(map(int, sorted(set(list(all_private_sub_labels)))))
+    logging.info(f'Total {num_sub_labels} sub-labels for super-label {super_label}')
 
     all_synthetic_samples = []
     additional_info = []
     total_samples = args.num_samples_schedule[0] if args.num_samples == 0 else args.num_samples
     accum_samples = 0
     for i, sub_label in enumerate(private_sub_labels):
+        if sub_label < args.checkpoint_sub_label:
+            continue
         indices = all_private_sub_labels == sub_label
         # 딱 떨어지지 않는 경우 마지막에 더 만들어줌
         if i == len(private_sub_labels) - 1:
             num_samples = total_samples - accum_samples
         else:
-            portion = len(indices) / args.num_private_samples
+            portion = indices.sum() / args.num_private_samples
             num_samples = int(np.ceil(total_samples * portion))
             accum_samples += num_samples
-        logging.info(f"{i+1}th sub-label's private_samples: {len(indices)}")
+        logging.info(f"{i+1}th sub-label's private_samples: {indices.sum()}")
         logging.info(f'Num synthetic samples: {num_samples}')
         path = function(args=args,
                  other_args=other_args,
                  all_private_samples=all_private_samples[indices],
                  all_private_labels=all_private_labels[indices],
                  all_private_features=all_private_features[indices],
-                 num_samples=num_samples)
+                 num_samples=num_samples,
+                 sub_label=sub_label)
         sub_synthetic_samples, sub_additional_info = load_samples(path)
         logging.info(f'{i+1}th sub-labels samples: {sub_synthetic_samples.shape}')
         all_synthetic_samples.append(sub_synthetic_samples)
@@ -1003,4 +1020,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(0)
