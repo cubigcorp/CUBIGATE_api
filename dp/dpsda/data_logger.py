@@ -4,8 +4,8 @@ import numpy as np
 from typing import Optional
 from matplotlib import use
 import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw, ImageFont
 from torchvision.utils import make_grid
-from sklearn.manifold import TSNE
 import torch
 import wandb
 
@@ -65,6 +65,15 @@ def round_to_uint8(image):
     return np.around(np.clip(image, a_min=0, a_max=255)).astype(np.uint8)
 
 
+def create_title_image(title, shape, font_path='arial.ttf', font_size=20):
+    width, height, _ = shape
+    image = Image.new('RGB', (width, height), color=(255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(font_path, font_size)
+    text_width, text_height = draw.textsize(title, font=font)
+    draw.text(((width - text_width) / 2, (height - text_height) / 2), title, fill=(0, 0, 0), font=font)
+    return np.array(image)
+
 
 def visualize(samples: np.ndarray,count: np.ndarray, folder: str, t: int,
               packed_samples: Optional[np.ndarray] = None, suffix='', n_row: int = 10):
@@ -79,6 +88,17 @@ def visualize(samples: np.ndarray,count: np.ndarray, folder: str, t: int,
         prefix = 'candidates'
         packed_samples = packed_samples.transpose((0, 1, 4, 2, 3))
         row = packed_samples.shape[1] + 1
+        # titles = ['Base'] + [f'Variation{i + 1}' for i in range(packed_samples.shape[1])]
+        # samples[0] = create_title_image('Selected', samples[0].shape)
+        # packed_images = []
+        # for col in range(row):
+        #     col_img = packed_samples[col * 5: (col + 1) * 5]
+        #     if col_img:
+        #         titled = create_title_image(title=titles[col], shape=col_img[0].shape)
+        #         col_images_with_title = [titled] + col_img  # 제목 이미지를 컬럼의 첫 이미지로 추가
+        #         col_combined = np.vstack(col_images_with_title)  # 컬럼 내 이미지들을 세로로 병합
+        #         packed_images.append(col_combined)
+        # packed_images = np.hstack(packed_images)
 
     ids = np.argsort(count)[::-1][:5]
     if packed_samples is not None:
@@ -159,31 +179,39 @@ def log_plot(private_samples: np.ndarray, synthetic_samples: np.ndarray, dir: st
 
 
 
-def t_sne(private_samples: np.ndarray, synthetic_samples: np.ndarray,
+def prv_syn_comp(method: str, private_samples: np.ndarray, synthetic_samples: np.ndarray,
           private_labels: np.ndarray, synthetic_labels: np.ndarray, t: int, dir: str, **kwargs):
+    method = method.lower()
+    assert method in ['t_sne', 'pca'], "Available methods are: t_SNE, PCA"
     num_private = len(private_samples)
     private_samples = private_samples.reshape((num_private, -1))
     synthetic_samples = synthetic_samples.reshape((len(synthetic_samples), -1))
     combined = np.vstack((private_samples, synthetic_samples))
 
-    tsne = TSNE(n_components=2, **kwargs)
-    X = tsne.fit_transform(combined)
+    if method == 't_sne':
+        from sklearn.manifold import TSNE
+        f = TSNE(n_components=2, **kwargs)
+    elif method == 'pca':
+        from sklearn.decomposition import PCA
+        f = PCA(n_components=2, **kwargs)
+    else:
+        raise ValueError("Unknown method")
+    X = f.fit_transform(combined)
     X_prv = X[:num_private]
     X_syn = X[num_private:]
 
     labels = np.unique(private_labels)
     assert np.unique(synthetic_labels) == labels
-    MARKERS = ['o', '^', 's', 'X']
 
     fig = plt.figure(facecolor='white')
     for label in labels:
-        plt.scatter(X_prv[private_labels == label, 0], X_prv[private_labels == label, 1], c='red', marker=MARKERS[label], label='Private')
-        plt.scatter(X_syn[synthetic_labels == label, 0], X_syn[synthetic_labels == label, 1], c='blue', marker=MARKERS[label], label='Synthetic')
+        plt.scatter(X_prv[private_labels == label, 0], X_prv[private_labels == label, 1], c='red', marker='o', label='Private')
+        plt.scatter(X_syn[synthetic_labels == label, 0], X_syn[synthetic_labels == label, 1], color='blue', marker='*', label='Synthetic')
 
     plt.axhline(y=0, color='black', linewidth=1)
     plt.axvline(x=0, color='black', linewidth=1)
     plt.legend()
-    plt.title(f't-SNE at step {t}')
-    plt.savefig(f"{dir}/{t}_t-SNE.png")
+    plt.title(f'{method} at step {t}')
+    plt.savefig(f"{dir}/{t}_prv_syn_comp.png")
     plt.close()
     

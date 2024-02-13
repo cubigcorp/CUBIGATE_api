@@ -12,7 +12,7 @@ from dpsda.metrics import make_fid_stats, compute_metric
 from dpsda.dp_counter import dp_nn_histogram, nn_histogram
 from dpsda.arg_utils import str2bool, split_args, split_schedulers_args, slice_scheduler_args
 from apis import get_api_class_from_name
-from dpsda.data_logger import log_samples, log_count, log_fid, visualize, log_plot, t_sne
+from dpsda.data_logger import log_samples, log_count, log_fid, visualize, log_plot, prv_syn_comp
 from dpsda.tokenizer import tokenize
 from dpsda.agm import get_epsilon
 from dpsda.experiment import get_toy_data
@@ -146,6 +146,10 @@ def parse_args():
     
     general = parser.add_argument_group("Generaal")
     general.add_argument(
+        '--reduction_method',
+        type=str
+    )
+    general.add_argument(
         '--random_seed',
         type=int,
         default=2024
@@ -191,18 +195,12 @@ def parse_args():
         default=-1
     )
     general.add_argument(
-        '--data_checkpoint_path',
+        '--checkpoint_folder',
         type=str,
         default="",
         help='Path to the data checkpoint')
     general.add_argument(
-        '--count_checkpoint_path',
-        type=str,
-        default="",
-        help="Path to the count checkpoint"
-    )
-    general.add_argument(
-        '--data_checkpoint_step',
+        '--checkpoint_step',
         type=int,
         default=-1,
         help='Iteration of the data checkpoint')
@@ -451,6 +449,10 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
         config.update(**vars(degree_scheduler.args))
     if args.use_weight_scheduler:
         config.update(**vars(weight_scheduler.args))
+
+    if args.checkpoint_folder != '' and args.wandb_resume_id is None:
+        args.wandb_resume_id = args.checkpoint_folder.strip('/').split('/')[-2].split('_')[-1]
+        logging.info(f'Resuming {args.wandb_resume_id}')
     wandb.init(
         entity='cubig_ai',
         project="AZOO",
@@ -497,21 +499,20 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
     synthetic_labels = np.repeat(private_classes, num_samples_per_class)
 
     # Generating initial samples.
-    if args.data_checkpoint_path != '':
+    if args.checkpoint_folder != '':
         logging.info(
-            f'Loading data checkpoint from {args.data_checkpoint_path}')
-        samples, additional_info = load_samples(args.data_checkpoint_path)
-        if args.direct_variate and args.data_checkpoint_step >= 1:
-            assert args.count_checkpoint_path != '', "Count information must be provided with data checkpoint."
-            (count, losers) = load_count(args.count_checkpoint_path)
+            f'Loading data checkpoint from {args.checkpoint_folder}')
+        samples, additional_info = load_samples(f'{args.checkpoint_folder}/_samples.npz')
+        if args.direct_variate and args.checkpoint_step >= 1:
+            (count, losers) = load_count(f'{args.checkpoint_folder}/count.npz')
             assert samples.shape[0] == count.shape[0], "The number of count should be equal to the number of synthetic samples"
-        if args.data_checkpoint_step < 0:
+        if args.checkpoint_step < 0:
             raise ValueError('data_checkpoint_step should be >= 0')
         if args.use_weight_scheduler:
-            weight_scheduler.set_from_t(args.data_checkpoint_step)
+            weight_scheduler.set_from_t(args.checkpoint_step)
         if args.use_degree_scheduler:
-            degree_scheduler.set_from_t(args.data_checkpoint_step)
-        start_t = args.data_checkpoint_step + 1
+            degree_scheduler.set_from_t(args.checkpoint_step)
+        start_t = args.checkpoint_step + 1
     else:
         if args.use_public_data:
             logging.info(f'Using public data in {args.public_data_folder} as initial samples')
@@ -544,15 +545,16 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
                 tokens = samples[:, :2]
             else:
                 tokens = samples
-            tsne_p = Process(target=t_sne, kwargs={
+            comp = Process(target=prv_syn_comp, kwargs={
                 'private_samples': all_private_samples,
                 'synthetic_samples': tokens,
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': 0,
-                'dir': run_folder
+                'dir': run_folder,
+                'method': args.reduction_method
             })
-            tsne_p.start()
+            comp.start()
             if args.modality == 'image':
                 visualize(
                     samples=samples[:100],
@@ -566,7 +568,7 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
                 folder=f'{run_folder}/{0}',
                 save_each_sample=args.save_each_sample,
                 modality=args.modality)
-            if args.data_checkpoint_step >= 0:
+            if args.checkpoint_step >= 0:
                 logging.info('Ignoring data_checkpoint_step'),
             start_t = 1
 
@@ -851,8 +853,8 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
             logging.info(f'fid={new_new_fid}')
             log_fid(run_folder, new_new_fid, t)
 
-        tsne_p.join()
-        wandb.log({'t-SNE': wandb.Image(f'{run_folder}/{t-1}_t-SNE.png'), 't': t-1})
+        comp.join()
+        wandb.log({'prv_syn_comp': wandb.Image(f'{run_folder}/{t-1}_prv_syn_comp.png'), 't': t-1})
         samples = new_new_samples
         additional_info = new_new_additional_info
         if args.modality == 'text':
@@ -862,15 +864,16 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
                 tokens = samples[:, :2]
         else:
             tokens = samples
-        tsne_p = Process(target=t_sne, kwargs={
+        comp = Process(target=prv_syn_comp, kwargs={
                 'private_samples': all_private_samples,
                 'synthetic_samples': tokens,
                 'private_labels': all_private_labels,
                 'synthetic_labels': synthetic_labels,
                 't': t,
-                'dir': run_folder
+                'dir': run_folder,
+                'method': args.reduction_method
             })
-        tsne_p.start()
+        comp.start()
         if args.modality == 'image':
             for class_i, class_ in enumerate(private_classes):
                 visualize(
@@ -914,22 +917,27 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
             wandb.log({"epsilon": eps, "t": t})
 
     
-    tsne_p.join()
-    wandb.log({'t-SNE': wandb.Image(f'{run_folder}/{args.T}_t-SNE.png'), 't': args.T})
+    comp.join()
+    wandb.log({'prv_syn_comp': wandb.Image(f'{run_folder}/{args.T}_prv_syn_comp.png'), 't': args.T})
     wandb.finish()
     return f'{run_folder}/{args.T}/_samples.npz'
 
 
 def main(super_label: int):    
     args, other_args = parse_args()
-    os.environ["WANDB_RUN_GROUP"] = "experiment-" + wandb.util.generate_id()
+    if args.checkpoint_sub_label > 0:
+        os.environ["WANDB_RUN_GROUP"] = args.checkpoint_folder.strip('/').split('/')[-3]
+        flag = 'resumed'
+    else:
+        os.environ["WANDB_RUN_GROUP"] = "experiment-" + wandb.util.generate_id()
+        flag = 'started'
     args.result_folder = f'{args.result_folder}/{os.environ["WANDB_RUN_GROUP"]}'
     if not os.path.exists(args.result_folder):
         os.makedirs(args.result_folder)
     log_file = os.path.join(args.result_folder, 'log.log')
     setup_logging(log_file)
     num_sub_labels = args.num_sub_labels_per_class[super_label]
-    logging.info(f'{os.environ["WANDB_RUN_GROUP"]} started')
+    logging.info(f'{os.environ["WANDB_RUN_GROUP"]} {flag}')
 
     if args.experimental:
         all_private_samples, all_private_labels = get_toy_data(

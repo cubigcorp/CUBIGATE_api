@@ -22,7 +22,7 @@ def soft_split(X: np.ndarray, num_sub_label: int, plot_result: bool = True, fold
         from sklearn.decomposition import PCA
         import matplotlib.pyplot as plt
         colors = plt.cm.rainbow(np.linspace(0, 1, num_sub_label))
-        pca = PCA(n_components=num_sub_label).fit(X)
+        pca = PCA(n_components=2).fit(X)
         reduced_X = pca.transform(X)
         centers = pca.transform(kmeans.centroids)
         plt.figure()

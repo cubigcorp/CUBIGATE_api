@@ -110,9 +110,9 @@ class IPAdapter:
                 negative_clip_image = self.clip_image_processor(images=negative_images, return_tensors="pt").pixel_values
                 negative_clip_image = negative_clip_image.to(self.device, dtype=torch.float16)
                 negative_image_prompt_embeds = self.image_encoder(negative_clip_image).image_embeds
-                negative_image_prompt_embeds = self.image_proj_model(negative_image_prompt_embeds)
             else:
-                negative_image_prompt_embeds = None
+                negative_image_prompt_embeds = torch.zeros_like(clip_image_embeds)
+            negative_image_prompt_embeds = self.image_proj_model(negative_image_prompt_embeds)
         else:
             clip_image_embeds = self.image_encoder(clip_image, output_hidden_states=True).hidden_states[-2]
             image_prompt_embeds = self.image_proj_model(clip_image_embeds)
@@ -120,9 +120,9 @@ class IPAdapter:
                 negative_clip_image = self.clip_image_processor(images=negative_images, return_tensors="pt").pixel_values
                 negative_clip_image = negative_clip_image.to(self.device, dtype=torch.float16)
                 negative_clip_image_embeds = self.image_encoder(negative_clip_image, output_hidden_states=True).hidden_states[-2]
-                negative_image_prompt_embeds = self.image_proj_model(negative_clip_image_embeds)
             else:
-                negative_clip_image_embeds = None
+                negative_clip_image_embeds = self.image_encoder(torch.zeros_like(clip_image), output_hidden_states=True).hidden_states[-2]
+            negative_image_prompt_embeds = self.image_proj_model(negative_clip_image_embeds)
         
         num_tokens = image_prompt_embeds.shape[0] * self.num_tokens
         self.set_tokens(num_tokens)
@@ -140,9 +140,8 @@ class IPAdapter:
 
         if prompt_embeds.shape[0] > 1:
             prompt_embeds = torch.cat(prompt_embeds.chunk(prompt_embeds.shape[0]), dim=1)
-        if negative_prompt_embeds is not None:
-            if negative_prompt_embeds.shape[0] > 1:
-                negative_prompt_embeds = torch.cat(negative_prompt_embeds.chunk(negative_prompt_embeds.shape[0]), dim=1)
+        if negative_prompt_embeds.shape[0] > 1:
+            negative_prompt_embeds = torch.cat(negative_prompt_embeds.chunk(negative_prompt_embeds.shape[0]), dim=1)
 
         text_embeds = (None, None, None, None)
         if prompt is not None:
@@ -151,11 +150,10 @@ class IPAdapter:
                 negative_prompt=negative_prompt,
                 device=self.device,
                 num_images_per_prompt=1,
-                do_classifier_free_guidance=False
+                do_classifier_free_guidance=True
             )
             prompt_embeds = torch.cat((text_embeds[0], prompt_embeds), dim=1)
-            if negative_prompt_embeds is not None:
-                negative_prompt_embeds = torch.cat((text_embeds[1], negative_prompt_embeds), dim=1)
+            negative_prompt_embeds = torch.cat((text_embeds[1], negative_prompt_embeds), dim=1)
 
         output = (prompt_embeds, negative_prompt_embeds)
 
@@ -163,6 +161,7 @@ class IPAdapter:
             output += (text_embeds[2], text_embeds[3])
         
         return output
+
 
     def set_scale(self, scale):
         for attn_processor in self.pipe.unet.attn_processors.values():
