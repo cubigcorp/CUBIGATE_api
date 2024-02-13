@@ -118,7 +118,7 @@ def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position
         for position in ['upper', 'lower']:
             if position == 'lower' and x_position == 'left':
                 continue
-            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=position, x_position=x_position, num_data=num_data//3, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
+            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=position, x_position=x_position, num_data=num_data, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
             samples.extend(sub_samples)
             labels.append(sub_labels)
         samples = np.stack(samples)
@@ -130,7 +130,7 @@ def get_toy_data(shape: Literal['square', 'circle'], y_position: str, x_position
         for position in ['left', 'right']:
             if position == 'left' and y_position == 'lower':
                 continue
-            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=y_position, x_position=position, num_data=num_data//3, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
+            sub_samples, sub_labels = get_toy_data(shape=shape, y_position=y_position, x_position=position, num_data=num_data, num_labels=num_labels, ratio=ratio, seed=seed, size=size)
             samples.extend(sub_samples)
             labels.append(sub_labels)
         samples = np.stack(samples)
