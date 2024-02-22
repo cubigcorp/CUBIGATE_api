@@ -25,7 +25,13 @@ def authen():
 
 def train(dataset: str, epsilon: float, delta: float, iterations: int):
     global headers
+    
+    if dataset=="cookie":
+        datapath="/var/dp_msv/datasets/cookie"
+    elif dataset=="lfw":
+        datapath="/var/dp_msv/datasets/lfw"
     train_config = {
+        "dataset" : datapath, #./input/lfw
         "iterations": iterations,
         "epsilon": epsilon,
         "delta": delta
@@ -118,7 +124,7 @@ with g.Blocks(css="footer{display:none !important}") as console:
     g.Button(value="Authenticate").click(fn=authen, outputs=[g.Markdown()])
     with g.Row(equal_height=True):
         with g.Column():
-            dataset = g.Dropdown(choices=['cookie'], value='cookie', label='Dataset')
+            dataset = g.Dropdown(choices=['cookie', "lfw"], value='cookie', label='Dataset')
             epsilon = g.Number(label="Epsilon", minimum=0, value=1.0)
             delta = g.Number(label='Delta', minimum=0, value=0.01)
             iteration = g.Slider(label='Iteration', minimum=2, maximum=20, value=2, step=1)
