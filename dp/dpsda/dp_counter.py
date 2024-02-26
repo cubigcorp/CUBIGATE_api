@@ -132,8 +132,8 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         faiss.normalize_L2(private_features)
     else:
         raise Exception(f'Unknown mode {mode}')
-    if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
+    # if torch.cuda.is_available():
+    #     index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")
@@ -195,8 +195,8 @@ def nn_histogram(synthetic_features, private_features, num_candidate: int, num_p
         faiss.normalize_L2(private_features)
     else:
         raise Exception(f'Unknown mode {mode}')
-    if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
+    # if torch.cuda.is_available():
+    #     index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")

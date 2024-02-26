@@ -925,7 +925,7 @@ def function(args, other_args, all_private_samples, all_private_labels, all_priv
 
 def main(super_label: int):    
     args, other_args = parse_args()
-    if args.checkpoint_sub_label > 0:
+    if args.checkpoint_step > 0:
         os.environ["WANDB_RUN_GROUP"] = args.checkpoint_folder.strip('/').split('/')[-3]
         flag = 'resumed'
     else:
