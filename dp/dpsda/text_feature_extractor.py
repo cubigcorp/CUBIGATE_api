@@ -5,7 +5,7 @@ import zipfile
 from glob import glob
 import os
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import random
 import clip
 from sentence_transformers import SentenceTransformer

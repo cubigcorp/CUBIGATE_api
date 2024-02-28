@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from .api import API
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM
@@ -180,7 +180,7 @@ class Llama2API(API):
             samples=samples,
             additional_info=additional_info,
             folder=self._result_folder,
-            plot_samples=False,
+            save_each_sample=False,
             save_npz=True,
             prefix=prefix)
 

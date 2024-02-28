@@ -4,7 +4,7 @@ from imageio.v2 import imread
 import requests
 from io import BytesIO
 from PIL import Image
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os
 import logging
 

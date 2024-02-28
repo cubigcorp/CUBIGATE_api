@@ -3,7 +3,7 @@ import cleanfid
 import os
 import shutil
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import torch
 from cleanfid.resize import make_resizer
 
@@ -50,7 +50,7 @@ def extract_features(
             library='PIL', quantize_after=False, filter='bicubic',
             output_size=(res, res))
         # TODO: in memory processing for computing features.
-        for i in tqdm(range(data.shape[0])):
+        for i in range(data.shape[0]):
             image = round_to_uint8(resizer(data[i]))
             imageio.imsave(os.path.join(tmp_folder, f'{i}.png'), image)
         files = [os.path.join(tmp_folder, f'{i}.png')

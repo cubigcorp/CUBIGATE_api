@@ -1,26 +1,162 @@
 # DPSDA
 [DPSDA Github](https://github.com/microsoft/DPSDA) 참고
 
-## 2024.01.04 Updates
+## 2024.01.24. Updates
 ### Parameters
-* `dp`: DP 적용 여부, default=True
-* `random_seed`: 난수 조절, default=2024
-* `sample_weight`: sample-based variation에 대한 가중치, default=1.0
-* `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, default=0
-* `direct_variate`: 1226 그거 적용 여부, default=False
-* `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, default=False
-* `diversity_lower_bound`: 패자부할전을 진행하지 않기 위한 다양성 하한선, default = 0.5
-* `loser_lower_bound`: 패자로 분류되기 위한 투표수 하한선, default = N_syn / k
+#### Ours
+* `direct_variate`: 1226 그거 적용 여부, *default=False*
+* `sample_weight`: sample-based variation에 대한 가중치, *default=1.0*
+* `demonstration`: variation 시 demostration으로 보여줄 샘플의 개수, *default=0*
+* `adaptive_variation_degree`: 샘플마다 variation degree를 다르게 설정할지 여부, *default=False*
 
-### Setting examples
-* Vanila DPSDA: 위의 파라미터 모두 default로
-* sample-based: `direct_variate true`
-* demonstration-based: `direct_variate true`, `sample_weight 0`, `demonstration [DEMO]`
-* mixed: `direct_variate true`, `sample_weight [W]`, `demonstration [DEMO]`
-  * sample_weight < 1일 때 demonstration이 0이면 assert error
-* non-DP: `dp false`
-  * epsilon, delta, threshold는 따로 설정하였어도 0으로 변경
-  * `direct_variate`와 `adaptive_variation_degree`도 True로 변경
+
+
+#### Schedulers
+* 구현된 종류: constant, linear, step, exponential
+* 스케줄러별 상세 argument 목록은 `/dpsda/schedulers.py`의 각 스케줄러 클래스의 `command_line_parser()` 함수에서 확인 가능
+  * 만약 사용하고자 하는 스케줄러의 `command_line_parser()`에 `min`이라는 변수가 있다면 `[scheduler type]_scheduler_min`으로 설정
+  * 예: `degree_scheduler_min`, `weight_scheduler_min`
+1. **Degree scheduler**: 
+  * `use_degree_scheduler`: 스케줄러 사용 여부, *default=True*
+  * `degree_scheduler`: 사용할 스케줄러 이름, *default=constant*
+2. **Weight scheduler**
+  * `use_weight_scheduler`: 스케줄러 사용 여부, *default=True*
+  * `weight_scheduler`: 사용할 스케줄러 이름, *default=constant*
+
+
+
+
+
+#### Privacy
+* `dp`: DP 적용 여부, *default=True*
+* `delta`: epsilon DP 완화 정도 *default=0.0*
+* `epsilon_delta_dp`: 1/N_syn 값으로 delta 값 설정 여부, True일 경우 `delta` 값 무시, *default=True*
+
+
+
+
+
+
+#### General
+* `random_seed`: 난수 조절, *default=2024*
+* `num_samples`: 몇 개의 샘플을 생성할지, *default=0*
+* `T`: 몇 번 동안 반복할지 *default=0*
+  * `num_samples`와 `T`는 동시에 설정되어야 함.
+  * 둘 중 하나만 할 경우 이전에 `100,100,~` 했던 것처럼 설정한 거로 보기 때문에 예상치 못한 결과 발생 가능
+* `use_public_data`: public seed population 여부, *default=False*
+* `public_data_folder`: seed population으로 사용할 public data의 경로, `use_public_data`가 False일 경우 무시됨.
+
+
+#### Wandb
+***어떤 실험을 돌리든 자동으로 wandb에 기록됨***
+* `wandb_log_notes`: 실험을 간략하게 소개하는 문구 지정, 추후 wandb 사이트에서 수정 가능
+* `wandb_log_tags`: 실험을 분류하기 위한 태그, 추후 wandb 사이트에서 수정 가능 
+* `wandb_log_dir`: wandb log를 저장할 경로, *default=/mnt/cubigate*
+* `wandb_resume_id`: 재개할 실험의 wandb id
+  * wandb 페이지 상에서 이어서 하고자 하는 실험의 상세 페이지(overview)를 보면 **Run path**라는 항목이 있음
+  * Run path에서 **cubig_ai/AZOO/** 이후의 값이 해당 실험의 id임
+
+
+---
+## Parameter setting examples
+### Initial population
+* **random**: 특별히 신경써야 할 인자 없음
+* **public**:
+  ```
+  --use_public_data true --public_data_folder [PUBLIC_DATA_FOLDER]
+  ```
+
+### DPSDA
+*  privacy나 general 관련 파라미터와 degree scheduler는 DPSDA에도 적용 가능
+  ```
+  --direct_variate false --use_weight_scheduler false --adaptive_variation_degree false
+  ```
+
+
+### Demonstration
+* **적용X**:
+ ```
+ --use_weight_scheduler false
+ ```
+* **적용O**:
+ 1. 스케줄러 사용
+ ```
+ --weight_scheduler linear --weight_scheduler_base 1.0 --weight_scheduler_min 0.9 --demonstration 3
+ ```
+ 2. 스케줄러 미사용
+   * constant scheduler와 동일한 결과
+ ```
+ --use_weight_scheduler false --sample_weight 0.9 --demonstration 3
+ ```
+
+
+
+### Resumption
+* `data_checkpoint_step`: `_samples.npz` 파일의 경로
+* `count_checkpoint_path`: `count.npz` 파일의 경로
+  * DPSDA는 해당 파일이 없는 실험도 재개할 수 있지만 우리 거는 필수
+* `wandb_resume_id`: wandb 상에서도 별개의 실험으로 기록이 분리되지 않으려면 필요함.
+  * 설정 안 해도 오류는 안 나나 로그를 보기 불편할 수 있음.
+  * 참고: **result_folder 안에 wandb run name으로 실험마다 따로 결과물 저장함**
+
+
+
+
+### All together
+
+<details>
+<summary> Cookie 예시 </summary>
+
+```
+python main.py \
+--device 2 \
+--api_device 2 \
+--count_threshold 2.0 \
+--feature_extractor inception_v3 \
+--fid_model_name inception_v3 \
+--fid_dataset_name cookie_dp \
+--num_candidate 8 \
+--private_sample_size 512 \
+--sample_size 512x512 \
+--data_folder /mnt/cubigate/data/cookie \
+--num_samples 100 \
+--T 17 \
+--num_fid_samples 100 \
+--num_private_samples 100 \
+--initial_prompt "a realistic photo of white ragdoll cat" \
+--make_fid_stats true \
+--result_folder /mnt/cubigate/minsy/result/cookie \
+--tmp_folder /tmp/ragdoll_result_pet_test/minsy \
+--api stable_diffusion \
+--random_sampling_checkpoint digiplay/AbsoluteReality_v1.8.1 \
+--random_sampling_guidance_scale 7.5 \
+--random_sampling_num_inference_steps 20 \
+--random_sampling_batch_size 8 \
+--variation_checkpoint digiplay/AbsoluteReality_v1.8.1 \
+--variation_guidance_scale 7.5 \
+--variation_num_inference_steps 20 \
+--variation_batch_size 1  \
+--modality image \
+--direct_variate true \
+--dp true \
+--epsilon 2.0 \
+--use_degree_scheduler true \
+--degree_scheduler linear \
+--degree_scheduler_base 1.0 \
+--degree_scheduler_min 0.2 \
+--use_weight_scheduler true \
+--weight_scheduler linear \
+--weight_scheduler_base 1.0 \
+--weight_scheduler_min 0.8 \
+--demonstration 3 \
+--adaptive_variation_degree true \
+--data_checkpoint_path "/mnt/cubigate/minsy/result/cookie/fluent-lion-1570/1/_samples.npz" \
+--data_checkpoint_step 1 \
+--count_checkpoint_path "/mnt/cubigate/minsy/result/cookie/fluent-lion-1570/1/count.npz" \
+--wandb_resume_id tyk5q804 \
+--wandb_log_tags cookie
+```
+</details>
 
 ---
 

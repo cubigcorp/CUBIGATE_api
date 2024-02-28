@@ -5,11 +5,12 @@ from collections import Counter
 from typing import Dict, Optional
 import torch
 from dpsda.agm import get_sigma
+from dpsda.data_logger import plot_count
 
 def revival(counts: np.ndarray, counts_1st_idx: np.ndarray, loser_filter: np.ndarray, synthetic_features: np.ndarray, num_candidate: int, index: faiss.Index):
     logging.info("Losers' revival started")
     shares = counts[~loser_filter]
-    winner_filter = np.concatenate((~loser_filter, np.full((counts.shape[0], num_candidate -1), False)), axis=1)
+    winner_filter = np.concatenate(((~loser_filter).reshape((-1, 1)), np.full((counts.shape[0], num_candidate -1), False)), axis=1)
 
     logging.info(f"Winners indices : {np.where(winner_filter)[0]}")
     logging.info(f"Winners' shares: {shares}")
@@ -78,19 +79,20 @@ def get_count_stack(private_features: np.ndarray, synthetic_features: np.ndarray
     return counts
 
 
-def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0) -> np.ndarray:
-    if epsilon is not None:
+def add_noise(counts: np.ndarray, epsilon: float, delta: float, num_nearest_neighbor: int, noise_multiplier: float, rng: np.random.Generator, num_candidate: int = 0, dir: str = '', step: int = 0, threshold: float = 0.0) -> np.ndarray:
+    if epsilon > 0 :
         sigma = get_sigma(epsilon=epsilon, delta=delta, GS=1)
         logging.info(f'calculated sigma: {sigma}')
-        counts += (rng.normal(scale=sigma, size=len(counts))) * np.sqrt(num_nearest_neighbor)
+        noisy = counts + (rng.normal(scale=sigma, size=len(counts))) * np.sqrt(num_nearest_neighbor)
     else:
-        counts += (rng.normal(size=len(counts)) * np.sqrt(num_nearest_neighbor)
+        noisy = counts + (rng.normal(size=len(counts)) * np.sqrt(num_nearest_neighbor)
                 * noise_multiplier)
 
+    plot_count(counts, noisy, dir, step, threshold)
     if num_candidate > 0 :
-        counts = counts.reshape((-1, num_candidate))
+        noisy = noisy.reshape((-1, num_candidate))
 
-    return counts
+    return noisy
 
 
 def sanity_check(counts: np.ndarray) -> bool:
@@ -112,8 +114,8 @@ def diversity_check(losers: np.ndarray, diversity: float, num_samples: int, dive
 
 def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray, epsilon: float, delta: float,
                     noise_multiplier: float, rng: np.random.Generator, num_nearest_neighbor: int, mode: str,
-                    threshold: float, num_candidate: int, diversity: float, diversity_lower_bound: float = 0.0,
-                    loser_lower_bound: float = 0.0, first_vote_only: bool = True, num_packing=1, device: int = 0):
+                    threshold: float, num_candidate: int, loser_lower_bound: float = 0.0, num_packing=1,
+                    device: int = 0, dir: str = None, step: int = None):
     # public_features shape: (Nsyn * candidate, embedding) if direct_variate
     #                        (Nsyn, embedding) otherwise
     np.set_printoptions(precision=3)
@@ -130,8 +132,8 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         faiss.normalize_L2(private_features)
     else:
         raise Exception(f'Unknown mode {mode}')
-    if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
+    # if torch.cuda.is_available():
+    #     index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")
@@ -140,10 +142,9 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     logging.info(f'Number of samples in index: {index.ntotal}')
 
     _, ids = index.search(private_features, k=num_nearest_neighbor)
-    counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)
-    clean_count = counts.copy()
-    if epsilon > 0:
-        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate)
+    counts = get_count_flat(ids, synthetic_features.shape[0], verbose=1)  #(Nsyn * candidate)
+    if epsilon > 0 or noise_multiplier > 0:
+        counts = add_noise(counts, epsilon, delta, num_nearest_neighbor, noise_multiplier, rng, num_candidate, dir, step, threshold)
     logging.info(f'Noisy count sum: {np.sum(counts)}')
     logging.info(f'Noisy count num>0: {np.sum(counts > 0)}')
     logging.info(f'Largest noisy counters: {np.flip(np.sort(counts.flatten()))[:50]}')
@@ -156,14 +157,10 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
     if num_candidate > 0:
         index.reset()
         counts_1st_idx = np.flip(np.argsort(counts, axis=1), axis=1)[:, 0]
-        counts = counts[np.arange(counts.shape[0]), counts_1st_idx].reshape((-1, 1))  # (Nsyn, 1)
-        losers = get_losers(counts, loser_lower_bound, private_features.shape[0]).reshape((-1, 1))  # (Nsyn, 1)
+        counts = counts[np.arange(counts.shape[0]), counts_1st_idx]  # (Nsyn,)
+        losers = get_losers(counts, loser_lower_bound, private_features.shape[0])
         if losers.sum() == 0:
-            return counts.flatten(), clean_count, losers, counts_1st_idx
-        counts[losers] = 0
-        # first_vote_only = diversity_check(losers, diversity, counts.shape[0], diversity_lower_bound) if first_vote_only else first_vote_only
-        # if first_vote_only:
-        #     return counts.flatten(), clean_count, losers, counts_1st_idx
+            return counts, losers, counts_1st_idx
         synthetic_features = synthetic_features.reshape((counts.shape[0], num_candidate) + synthetic_features.shape[1:])  # (Nsyn, num_candidate, ~)
         counts, counts_1st_idx = revival(
             counts=counts,
@@ -178,7 +175,7 @@ def dp_nn_histogram(synthetic_features: np.ndarray, private_features: np.ndarray
         losers = np.expand_dims(losers, axis=1)  # (Nsyn, 1)
         counts_1st_idx = np.zeros_like(counts)
 
-    return counts.flatten(), clean_count, losers, counts_1st_idx
+    return counts, losers, counts_1st_idx
 
 
 def nn_histogram(synthetic_features, private_features, num_candidate: int, num_packing=1, num_nearest_neighbor=1, mode='L2', device: int = 0):
@@ -198,15 +195,15 @@ def nn_histogram(synthetic_features, private_features, num_candidate: int, num_p
         faiss.normalize_L2(private_features)
     else:
         raise Exception(f'Unknown mode {mode}')
-    if torch.cuda.is_available():
-        index = faiss.index_cpu_to_gpu(faiss_res, device, index)
+    # if torch.cuda.is_available():
+    #     index = faiss.index_cpu_to_gpu(faiss_res, device, index)
 
     logging.debug(f"public_features:\n{synthetic_features}")
     logging.info("Counting votes from private samples")
 
     counts = get_count_stack(private_features=private_features, synthetic_features=synthetic_features, num_candidate=num_candidate, index=index, k=num_nearest_neighbor)
     counts_1st_idx = np.flip(np.argsort(counts, axis=1), axis=1)[:, 0]
-    counts = counts[np.arange(counts.shape[0]), counts_1st_idx].reshape((-1, 1))  # (Nsyn, 1)
+    counts = counts[np.arange(counts.shape[0]), counts_1st_idx]  # (Nsyn,)
     losers = np.full(counts.shape, False)
 
-    return counts.flatten(), losers, counts_1st_idx
+    return counts, losers, counts_1st_idx

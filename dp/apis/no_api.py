@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from typing import Optional, Union
 from .api import API
 from wrapt_timeout_decorator import timeout
@@ -18,7 +18,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 class NoAPI(API):
     def __init__(self, random_sampling_batch_size,
-                 variation_batch_size, categorical_variation_degree, data_path, seed_population, public_dir,modality,
+                 variation_batch_size, categorical_variation_degree, data_path, seed_population,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._random_sampling_batch_size = random_sampling_batch_size
@@ -26,12 +26,7 @@ class NoAPI(API):
         self.categorical_variation_degree=categorical_variation_degree
         self.data_path=data_path
         self.seed_population=seed_population
-        self.public_dir=public_dir
-        self.modality=modality
-
-        
     
-
 
     @staticmethod
     def command_line_parser():
@@ -48,25 +43,19 @@ class NoAPI(API):
             default=10,
             help='The batch size for variation API')
         parser.add_argument(
-        '--categorical_variation_degree',
-        type=float,
-        default=0.1,)
+            '--categorical_variation_degree',
+            type=float,
+            default=0.1,
+            required=False)
         parser.add_argument(
             '--data_path',
             type=str,
-            default="/home/yerinyoon/Cubigate_ai_engine/dp/data/private_less_preprocessed_adult.csv" )
+            required=False)
         parser.add_argument(
-        '--seed_population',
-        type=str,
-        default='GM',)
-        parser.add_argument(
-        '--modality',
-        type=str,
-        default='tabular',)
-        parser.add_argument(
-        '--public_dir',
-        type=str,
-        required=False)
+            '--seed_population',
+            type=str,
+            default='GM',
+            required=False)
 
         return parser
 
@@ -362,15 +351,15 @@ class NoAPI(API):
        # print(return_prompts)
        # print(samples)
         return np.array(samples), np.array(return_prompts)    
-    def random_sampling(self, prompts,num_samples,  size=None):
+    def random_sampling(self,prompts,num_samples,size=None):
         
         max_batch_size = self._random_sampling_batch_size
         texts = []
         return_prompts = []
  
-        if self.modality=="tabular" and self.seed_population=="GM":
+        if self._modality=="tabular" and self.seed_population=="GM":
             samples, return_prompt=self.GM_initial_sampling(num_samples)
-        elif self.modality=="tabular" and self.seed_population=="random":
+        elif self._modality=="tabular" and self.seed_population=="random":
             public_info, column=self.attrPrompt()
             samples, return_prompt=self.random_initial_sampling(num_samples, public_info, column)
             #random_initial_sampling(self, num_samples,  public_info, columns
@@ -420,12 +409,12 @@ class NoAPI(API):
                         )
                     idx += 1
                 return_prompts.extend([prompt] * num_samples_for_prompt)
-            texts=np.concatenate(texts, axis=0)
+            samples=np.concatenate(texts, axis=0)
             return_prompt=np.array(return_prompts)
         return samples, return_prompt
 
     def variation(self, samples: np.ndarray, additional_info: np.ndarray,
-                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, sample_weight: float = 1.0):
+                        num_variations_per_sample: int, size: int, variation_degree: Union[float, np.ndarray], t=None, candidate: bool = True, demo_samples: Optional[np.ndarray] = None, demo_weights: Optional[np.ndarray] = None, sample_weight: float = 1.0):
         if isinstance(variation_degree, np.ndarray):
             if np.any(0 > variation_degree) or np.any(variation_degree > 1):
                 raise ValueError('variation_degree should be between 0 and 1')
@@ -559,9 +548,8 @@ class NoAPI(API):
                             # 변환 과정에서 에러 발생 시 건너뛰기
                             skipped_samples += 1
                             continue
+                        
             elif self._modality == 'tabular':
-
-          
                 # (self,target_sample, variation_degree, cat_var):
                 variation=self._tabular_variation(target_samples, target_degree ,  cat_degree)
                     
@@ -596,7 +584,7 @@ class NoAPI(API):
             samples=samples,
             additional_info=additional_info,
             folder=self._result_folder,
-            plot_samples=False,
+            save_each_sample=False,
             save_npz=True,
             prefix=prefix)
 
@@ -608,5 +596,3 @@ class NoAPI(API):
         iteration = int(path.split('_')[-2])
         iteration += 1
         return samples, iteration
-        
-

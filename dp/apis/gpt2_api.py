@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 from .api import API
 # from dpsda.pytorch_utils import dev
