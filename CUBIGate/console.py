@@ -116,6 +116,7 @@ def generate():
         return r['detail']
     if r.status_code != 200:
         r = r.json()
+        print(r)
         return f"ERROR: {r['errors'][0]['message']}"
     else:
         return 'Generation Started.'

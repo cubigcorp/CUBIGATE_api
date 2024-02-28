@@ -9,7 +9,7 @@ from .dataset import ImageDataset
 
 def load_data(data_dir, batch_size, image_size, class_cond,
               num_private_samples):
-
+    print(data_dir)
     transform = T.Compose([
         T.Resize(image_size),
         T.CenterCrop(image_size),
@@ -17,8 +17,8 @@ def load_data(data_dir, batch_size, image_size, class_cond,
     ])
     dataset = ImageDataset(folder=data_dir, transform=transform)
 
-
-    loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=10,
+    print(0)
+    loader = DataLoader(dataset, batch_size, shuffle=False, num_workers=12,
                         pin_memory=torch.cuda.is_available(), drop_last=False)
     all_samples = []
     all_labels = []

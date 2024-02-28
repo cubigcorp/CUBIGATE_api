@@ -13,26 +13,30 @@ from cubigate.dp.agm import get_epsilon
 from PIL import Image
 import shutil
 import zipfile
+import torch
+
+from transformers import BlipProcessor, BlipForConditionalGeneration
 
 class CubigDPGenerator():
     def __init__(
         self, 
         api: str = "stable_diffusion",
         feature_extractor: str = "inception_v3",
-        result_folder: str = "/var/dp_msv",
+        result_folder: str = "/var/dp_msv/checkpoint/",
         tmp_folder: str = "./tmp/cookie",
-        data_loading_batch_size: int = 100,
+        data_loading_batch_size: int = 1,
         feature_extractor_batch_size: int = 500,
-        prv_img_size: int = 1024,
+        prv_img_size: int = 512,
         conditional: bool = False,
         num_prv_data: int = 10,
         prompt: str = """white or gray ragdoll cat, intricate, 
                         high detail, dramatic, extremely realistic eyes, 
                         extremely realistic hair, 
                         hair color can be white,gray,black or other else""",
-        seed: int = 2024
+        seed: int = 2024,
+        gpu_num: int=0
         ) -> None:
-        
+        print(2)
         
         
         """
@@ -70,7 +74,9 @@ class CubigDPGenerator():
 
 
         # 0-b. Declare class variables
+        print(1)
         self.api_class = get_api_class_from_name(api)  # Name of the foundation model API
+        print(3)
         self.result_folder = result_folder
         self.data_loading_batch_size = data_loading_batch_size
         self.prv_img_size = prv_img_size
@@ -82,6 +88,7 @@ class CubigDPGenerator():
         self.prompt = prompt
         self.rng = np.random.default_rng(seed)
         self.name = uuid.uuid4().hex
+        self.gpu_num=gpu_num
         
         # 0-x. Set up logging
         setup_logging(os.path.join(result_folder, f'{self.name}.log'))
@@ -120,17 +127,46 @@ class CubigDPGenerator():
         str:
             Path for the initial samples
         """
-        if len(api_args) == 0:
-            api_args = [
-                        '--API_checkpoint', 'stabilityai/sdxl-turbo',
-                        '--guidance_scale', '0',
-                        '--inference_steps', '2',
-                        '--API_batch_size', '10',
-                        ]
+        print(f"checkpoint_path:{checkpoint_path}")
+        print(f"data_folder:{data_folder}")
+        dataname=data_folder.split("/")[-1]
+        print(f"dataname: {dataname}")
+        
+        if dataname=="cookie":
+            self.prompt=["white or gray ragdoll cat, intricate, \
+                        high detail, dramatic, extremely realistic eyes, \
+                        extremely realistic hair, \
+                        hair color can be white,gray,black or other else "]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args =   [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '4',
+                            '--lora', "/root/Cubigate_ai_engine/CUBIGate/models/Lora/cookie_sd_xl.safetensors"
+                            ]
+       
+        elif dataname=="lfw":
+            self.prompt=["Smart Sharpe, A bust shot of "]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args = [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '4'
+                            ,
+                             '--lora', "/root/Cubigate_ai_engine/CUBIGate/models/Lora/naver_lora.safetensors"
+                             #TODO: lora값 바꾸기
+                            ]
+        self.result_folder=os.path.join(self.result_folder,dataname)
+        
+        #TODO: auto_prompt 선텍여부
+        self.auto_prompt(data_folder, dataname)    
+        
+        
         api_args.extend(['--prompt', self.prompt])
         # 1. Set up API instance
         self.api = self.api_class.from_command_line_args(api_args)
-
         # 2. Load private data
         self.all_private_samples, self.all_private_labels = load_data(
             data_dir=data_folder,
@@ -183,7 +219,7 @@ class CubigDPGenerator():
         iteration: int,
         epsilon: float,
         delta: float,
-        data_folder: str = "./input_data/cookie",
+        data_folder: str,
         checkpoint_path: str = "",
         checkpoint_step: int = 1,
         num_samples: int = 10,
@@ -233,18 +269,46 @@ class CubigDPGenerator():
         str:
             Path for the final checkpoint
         """
+        
+        
         if len(variation_degree_schedule) == 0:
             variation_degree_schedule = [1.0-i*0.02 for i in range(iteration)]
-        if len(api_args) == 0:
-            api_args = [
-                        '--API_checkpoint', 'stabilityai/sdxl-turbo',
-                        '--guidance_scale', '0',
-                        '--inference_steps', '2',
-                        '--API_batch_size', '1',
-                        ]
+            
+        dataname=data_folder.split("/")[-1]
+        if dataname=="cookie":
+            self.prompt=["white or gray ragdoll cat, intricate, \
+                        high detail, dramatic, extremely realistic eyes, \
+                        extremely realistic hair, \
+                        hair color can be white,gray,black or other else "]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args =   [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '4',
+                            '--lora', "/root/Cubigate_ai_engine/CUBIGate/models/Lora/cookie_sd_xl.safetensors"
+                            ]
+       
+       
+        elif dataname=="lfw":
+            self.prompt=["Smart Sharpe, A bust shot of "]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args = [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '4'
+                            ,
+                             '--lora', "/root/Cubigate_ai_engine/CUBIGate/models/Lora/naver_lora.safetensors"
+                             #TODO: lora값 바꾸기
+                            ]
+       
+  
         api_args.extend(['--prompt', self.prompt])
+        api_args.extend(['--gpu_num', str(self.gpu_num)])
         
         # 1. Initialize
+
         samples_path = self.initialize(
             api_args=api_args,
             data_folder=data_folder,
@@ -277,6 +341,8 @@ class CubigDPGenerator():
                 mode=mode
             )
             self.folder = f'{self.result_folder}/{t + 1}'
+            # if not os.path.exists(f'{self.result_folder}/{dataname}'):
+            #     os.mkdir(f'{self.result_folder}/{dataname}')
             # 4. Select the fittest candidate of each sample
             self.select(
                 dist_path=count_path,
@@ -285,14 +351,17 @@ class CubigDPGenerator():
             )
             logging.info(f"Privacy cost so far: {get_epsilon(epsilon, t):.2f}")
         shutil.rmtree(self.tmp_folder, ignore_errors=True)
+        print(self.folder)
+            
         return f'{self.folder}/{self.name}_samples.npz'
 
-
+    ## Generate단계에서눈 auto prompt 적용하지 않았음. 
+    ## TODO: 필요시 사용
     def generate(
         self,
         base_data: str,
         img_size: str = '512x512',
-        num_samples: int = 2,
+        num_samples: int = 10,
         variation_degree: float = 0.5,
         api_args: List = []
     ) -> zipfile.ZipFile:
@@ -315,17 +384,50 @@ class CubigDPGenerator():
         ZipFile:
             Zip file of the generated images
         """
-        if len(api_args) == 0:
-            api_args=[
-                '--API_checkpoint', 'stabilityai/sdxl-turbo',
-                '--guidance_scale', '0',
-                '--inference_steps', '2',
-                '--API_batch_size', '1',
-                ]
+        # /var/dp_msv/
+        print(f"base_data:{base_data}")
+        print(f"result_folder:{self.result_folder}")
+        dataname=base_data.split("/")[4]
+        # .split("/")[0]
+        print(dataname)
+    
+    
+        if dataname=="cookie":
+            self.prompt=["white or gray ragdoll cat, intricate, \
+                        high detail, dramatic, extremely realistic eyes, \
+                        extremely realistic hair, \
+                        hair color can be white,gray,black or other else"]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args =  [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '1',
+                            '--lora', "/root/Cubigate_ai_engine/CUBIGate/models/Lora/cookie_sd_xl.safetensors"
+                            ]
+       
+       
+        elif dataname=="lfw":
+            self.prompt=["Smart Sharpe, A bust shot of one person"]*self.num_prv_data
+            if len(api_args) == 0:
+                api_args = [
+                            '--API_checkpoint', '/root/Cubigate_ai_engine/CUBIGate/models/stable_diffusion/sdxl',
+                            '--guidance_scale', '7',
+                            '--inference_steps', '40',
+                            '--API_batch_size', '1',
+                             '--lora', '/root/Cubigate_ai_engine/CUBIGate/models/Lora/naver_lora.safetensors'
+                             #TODO: lora값 바꾸기
+                            ]
         api_args.extend(['--prompt', self.prompt])
+        api_args.extend(['--gpu_num', str(self.gpu_num)])
+        print(f"gpu_num", f'{str(self.gpu_num)}')
+        print(api_args)
+        print(self.prompt)
+        print(base_data)
 
         # 1. Make sure it has API instance
         if not hasattr(self, 'api'):
+            print("attr")
             self.api = self.api_class.from_command_line_args(api_args)
             self.api._init_variate()
 
@@ -335,7 +437,9 @@ class CubigDPGenerator():
         # 3. Generate samples as variations of base data
         if num_samples != len(samples):
             target_idx = np.random.choice(len(samples), num_samples, replace=True)
-        target_samples = samples[target_idx]
+            target_samples = samples[target_idx]
+        else:
+            target_samples=samples
         width, height = list(map(int, img_size.split('x')))
         gen_samples = self.api.variation(
             samples=target_samples,
@@ -396,7 +500,15 @@ class CubigDPGenerator():
             plot_samples=False,
             save_npz=True,
             prefix=f'{self.name}_packed')
+        
+        
         print(f"packed: {packed_samples.shape}")
+        try:
+            image=Image.fromarray(packed_samples[0][0])
+            image.save("./lfw_sample.png")
+        except:
+            print("fail to save")
+            pass
         return f'{self.folder}/{self.name}_packed_samples.npz'
 
 
@@ -511,6 +623,7 @@ class CubigDPGenerator():
                 selected.append(indices)
         selected = np.concatenate(selected)
         samples = samples[np.arange(samples.shape[0]), selected]
+        print(self.folder)
         log_samples(
             samples=samples,
             folder=self.folder,
@@ -518,4 +631,51 @@ class CubigDPGenerator():
             save_npz=True,
             prefix=self.name)
         return f'{self.folder}/{self.name}_samples.npz'
+    def auto_prompt(self, data_folder, dataname):
+        
+        model="Salesforce/blip-image-captioning-base"
+        prompt_save_file=os.path.join(self.result_folder, dataname)
+        pipe=BlipForConditionalGeneration.from_pretrained(model)
+        processor=BlipProcessor.from_pretrained(model)
+        # Load and preprocess the image
+        # background_pipe=Interrogator(Config())
+        # background_table=LabelTable(["indoor", "outdoor", "unspecific", "crowded", "simple"], "terms", background_pipe)
+
+        filelist=np.sort(os.listdir(data_folder))
+
+        for i, _file in enumerate(filelist):
+            if i==len(self.prompt):
+                break
+            path=os.path.join(data_folder, _file)
+            image=Image.open(path)
+            inputs=processor(image, return_tensors="pt")
+            out=pipe.generate(**inputs)
+            # print(gen_prompts[i])
+            # print(pipe(image))
+            prompt=processor.decode(out[0], skip_special_token=True)
+            prompt=prompt.replace("[SEP]", "")
+            # prompt=prompt.replace("a man", "man")
+            # prompt=prompt.replace("a woman", "woman")
+            prompt=prompt.replace("tuxed", "")
+            prompt=prompt.replace("fr", "")
+            
+            prompt=prompt.split(" and ")[0]
+            # prompt=prompt+" on the photo with RGB-scale, "
+            # prompt=prompt+f"background is {background_table.rank(background_pipe.image_to_features(image), top_count=1)[0]}"
+            self.prompt[i]+=prompt
+            
+            if i ==0:
+                with open( prompt_save_file, "w") as _prompt:
+                    _prompt.write(self.prompt[i]+"\n")
+            else:
+                with open(prompt_save_file, "a") as _prompt:
+                    _prompt.write(self.prompt[i]+"\n")
+                    
+        print(f"Auto_prompt: {self.prompt}")
+        del pipe
+        del processor
+        torch.cuda.empty_cache()
+        print(torch.cuda.memory_allocated()/1024**2)
+        print(torch.cuda.memory_cached()/1024**2)
+   
 

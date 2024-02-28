@@ -1,12 +1,17 @@
 from PIL import Image
 import blobfile as bf
 from torch.utils.data import Dataset
+import random
+import os
 
 
 
 def _list_files_recursively(data_dir):
     results = []
-    for entry in sorted(bf.listdir(data_dir)):
+    file_list=os.listdir(data_dir)
+    random.shuffle(file_list)
+    print(file_list)
+    for entry in file_list:
         full_path = bf.join(data_dir, entry)
         ext = entry.split('.')[-1]
         if "." in entry and ext.lower() in ['jpg', 'jpeg', 'png', 'gif']:

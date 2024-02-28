@@ -18,27 +18,40 @@ logging.getLogger("pika").propagate = False
 db_connector = DBConnector()
 
 #Just train the model to make DP-synthetic data
-def train_data_generation_model(iterations=2, epsilon=1, delta=0):
-    generator = CubigDPGenerator()
-    data_checkpoint=generator.train(iterations, epsilon, delta)
-    print(data_checkpoint)
-    del generator
-    torch.cuda.empty_cache()
-    return  data_checkpoint
+
+
+def train_data_generation_model(iterations=2, epsilon=1, delta=0, dataset="/var/dp_msv/datasets/cookie"):
+    try:
+        print(dataset)
+        generator = CubigDPGenerator(gpu_num=0)
+        data_checkpoint=generator.train(iterations, epsilon, delta, data_folder=dataset)
+        print(data_checkpoint)
+        del generator
+        torch.cuda.empty_cache()
+        return  data_checkpoint
+    except Exception as e:
+        raise e
 
 #Just generate data with your data checkpoint (data checkpoint means model chekcpoint in Cubigate)
 #Output: zip file of new data.
 def generate_dp_data(base_data="./result/cookie/1/_samples.npz"):
-    generator = CubigDPGenerator()
-    new_data=generator.generate(base_data)
-    del generator
-    torch.cuda.empty_cache()
-    print(type(new_data))
-    return new_data
+    try:
+        print(base_data)
+        generator = CubigDPGenerator(gpu_num=1)
+        print(3)
+        new_data=generator.generate(base_data)
+        del generator
+        torch.cuda.empty_cache()
+        print(type(new_data))
+        return new_data
+    except Exception as e:
+        raise e
     
 #Run the entire process of Cubigate (train, generate) => output is zip file of new image data
-def train_generate_dp_data(iterations=2, epsilon=1, delta=0):
-    data_checkpoint=generator.train(iterations, epsilon, delta)
+def train_generate_dp_data( iterations=2, epsilon=1, delta=0, dataset="/var/dp_msv/datasets/cookie" ):
+    print(dataset)
+    generator = CubigDPGenerator()
+    data_checkpoint=generator.train(iterations, epsilon, delta, data_folder=dataset)
     new_data=generator.generate(data_checkpoint)
     print(type(new_data))
     return new_data
@@ -69,7 +82,6 @@ def select_measured(measured: str, variated: str) -> str:
     return selected
 
 
-
 def on_message_callback_train(ch, method, properties, body):
     try:
         print(f" [x] Received {body.decode()}")
@@ -79,6 +91,8 @@ def on_message_callback_train(ch, method, properties, body):
         user_id = data['user_id']
         service_id = data['service_id']
         
+        dataset=data["dataset"]
+
         job_status = db_connector.call_stored_procedure('service_request_check_status', params=[job_id], fetch_all=False)
         if job_status['status'] == 'SUCCESS' or job_status['status'] == 'FAILED':
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -94,7 +108,7 @@ def on_message_callback_train(ch, method, properties, body):
         db_connector.execute_query('service_request_update', params=[job_id, 'EXECUTING', empty_json_str, ''], fetch_all=False)
         
         
-        result_file_path = train_data_generation_model(data['iterations'], data['epsilon'], data['delta'])
+        result_file_path = train_data_generation_model(data['iterations'], data['epsilon'], data['delta'], dataset)
         
         result = {"job_id": job_id, "result": {"file_path": result_file_path}}
         # send result to callback url
@@ -122,6 +136,28 @@ def on_message_callback_train(ch, method, properties, body):
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
+##FOR TEST before deploy
+def test_train():
+    
+    print(f" [x] DEV train")
+
+    dataset="/var/dp_msv/datasets/lfw"
+    
+    print(dataset)
+    result_file_path = train_data_generation_model(2,1, 0.01, dataset)
+    print(result_file_path)
+    print("done")
+    
+def test_generate():
+
+    checkpoint_path=""
+    
+    file_name = generate_dp_data(checkpoint_path).filename
+
+    print(file_name)
+    print("done")
+
+      
 def on_message_callback_generate(ch, method, properties, body):
     try:
         print(f" [x] Received {body.decode()}")
@@ -145,6 +181,7 @@ def on_message_callback_generate(ch, method, properties, body):
         # Update job status to executing
         db_connector.execute_query('service_request_update', params=[job_id, 'EXECUTING', empty_json_str, ''], fetch_all=False)
         
+        print(data["checkpoint_path"])
         
         file_name = generate_dp_data(data['checkpoint_path']).filename
         
@@ -181,26 +218,34 @@ def on_message_callback_clear_messages(ch, method, properties, body):
 
 
 mode = sys.argv[1]
-if not mode or mode not in ['train', 'generate']:
+if not mode or mode not in ['train', 'generate', 'DEV_train', "DEV_generate"]:
     print("Please specify mode: train or generate")
     exit(1)
 
 while True:
     if mode == 'train':
         queue_name = 'dp_msv_train'
-    else:
+    elif mode=="generate":
+        print("generate")
         queue_name = 'dp_msv_generate'
+    else:
+        pass
     try:
-        logging.info(f" [*] Waiting for messages in queue: {queue_name}. To exit press CTRL+C")
-        mq_connector = MqConnector()
-        channel = mq_connector.channel
-        channel.queue_declare(queue=queue_name, durable=True)
-        channel.basic_qos(prefetch_count=1)
-        if queue_name == 'dp_msv_train':
-            channel.basic_consume(queue_name, on_message_callback_train)
+        if mode=="DEV_train":
+            test_train()
+        elif mode=="DEV_generate":
+            test_generate()
         else:
-            channel.basic_consume(queue_name, on_message_callback_generate)
-        channel.start_consuming()
+            logging.info(f" [*] Waiting for messages in queue: {queue_name}. To exit press CTRL+C")
+            mq_connector = MqConnector()
+            channel = mq_connector.channel
+            channel.queue_declare(queue=queue_name, durable=True)
+            channel.basic_qos(prefetch_count=1)
+            if queue_name == 'dp_msv_train':
+                channel.basic_consume(queue_name, on_message_callback_train)
+            else:
+                channel.basic_consume(queue_name, on_message_callback_generate)
+            channel.start_consuming()
         #connection = mq_connector.connection
         #connection.process_data_events()
     # Don't recover if connection was closed by broker
